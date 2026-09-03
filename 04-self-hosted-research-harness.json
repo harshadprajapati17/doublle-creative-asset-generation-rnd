@@ -1,0 +1,313 @@
+{
+  "$schema": "internal://research-harness/v1",
+  "title": "Self-Hosted Image/Video Model — Cost Research Harness",
+  "purpose": "Guided checklist to research the true cost of running our own open-weight image/video generation model on our cloud, so it can be compared against the hosted-API costs in 03-research-report.md.",
+  "status": "completed — see 05-self-hosted-cost-report.md",
+  "created": "2026-09-03",
+  "completed": "2026-09-03",
+  "research_summary": {
+    "image_primary_self_host": "FLUX.2 [klein] 4B (Apache 2.0)",
+    "video_primary_self_host": "Wan 2.2 TI2V-5B (Apache 2.0); Wan 2.6/2.7 not open-weight",
+    "recommended_strategy": "hybrid — hosted for production quality, self-host bulk/draft images on SERVERLESS only; do not self-host video for production",
+    "critical_finding": "Billing model decides the outcome. Pods/VMs bill wall-clock 24x7; serverless bills active seconds only. At 10k images/month a pod is 0.76% utilised (5.6 GPU-hours of work vs 730 hours billed).",
+    "cheapest_image_path": "RunPod Serverless L4 ~$0.00038/image (~₹0.036) at 2s/img — serverless, no idle cost",
+    "pod_path_warning": "RunPod L40S Secure pod = ₹68,656/mo fixed = ₹6.87/image at 10k volume, which is MORE than hosted Gemini batch at ₹6.37",
+    "vs_hosted_image": "Gemini 3 Pro Image 2K batch ₹6.37/image. Serverless self-host ~₹0.04–0.10/image; pods only beat hosted above ~8,600–10,800 images/month",
+    "vs_hosted_video": "Veo 3.1 Fast ₹71.25/clip vs Wan 2.2 serverless ₹14–28/clip, but 720p, no native audio, 5–9 min latency — not recommended",
+    "open_questions": [
+      "DNA usable-output rate for klein 4B",
+      "BFL Platform/Builder licence dollar price",
+      "Measured seconds/image on our stack",
+      "Cold-start seconds per serverless invocation"
+    ],
+    "corrections_applied": [
+      "First draft applied the serverless per-second formula to always-on Pods, understating pod cost by up to 92x",
+      "First draft applied a 70% utilisation divisor to Modal serverless, which has no idle tax",
+      "First draft treated AWS Capacity Blocks ($4.72/GPU-hr Mumbai) as pay-per-use; it is a prepaid reservation",
+      "First draft claimed breakeven ~0 for images; actual pod breakeven is ~8,600–10,800 images/month"
+    ]
+  },
+  "conventions": {
+    "currency": "USD, with INR conversion at the rate captured on the research date",
+    "verification": "Every price must come from an official provider pricing page; record the URL and the date checked",
+    "uncertainty": "If a number cannot be verified, mark confidence 'low' and state the assumption instead of guessing",
+    "comparison_unit": "Cost per generated image, and cost per generated 5-second video clip"
+  },
+
+  "sections": [
+    {
+      "id": "1_model_selection",
+      "title": "Which model to self-host",
+      "goal": "Shortlist open-weight image and video models that meet our quality bar and are legally deployable.",
+      "questions": [
+        "Which open-weight image models are current as of the research date (FLUX.2 [dev]/[klein], Stable Diffusion / SD3.5, Qwen-Image, Z-Image, HiDream, others)?",
+        "Which open-weight video models are current (Wan 2.7, HunyuanVideo, LTX-Video, Mochi, CogVideoX, others)?",
+        "What is the exact model version and release date, and is it still maintained?",
+        "How does each compare in quality to our hosted baseline (Gemini 3 Pro Image, Veo 3.1)?",
+        "Does the model support the capabilities we need: reference images, image editing, image-to-video, character consistency?"
+      ],
+      "collect": [
+        "model_name",
+        "version",
+        "release_date",
+        "modality (image | video)",
+        "parameter_count",
+        "native_resolution",
+        "max_video_duration",
+        "supports_reference_images",
+        "supports_editing",
+        "supports_finetuning_lora",
+        "quality_vs_hosted_baseline",
+        "official_model_card_url"
+      ]
+    },
+
+    {
+      "id": "2_licensing",
+      "title": "Is the model actually free to use",
+      "goal": "Confirm we can legally use the weights for commercial production output.",
+      "questions": [
+        "What licence do the weights ship under (Apache 2.0, MIT, non-commercial, custom community licence)?",
+        "Is commercial use permitted without a paid agreement?",
+        "Is there a revenue or headcount threshold above which a commercial licence is required?",
+        "Are there restrictions on generated-output ownership, redistribution, or training derivatives?",
+        "Does the licence require attribution or output watermarking?",
+        "If a commercial licence is required, what does it cost and how is it billed?"
+      ],
+      "collect": [
+        "licence_name",
+        "commercial_use_allowed (yes | no | conditional)",
+        "threshold_conditions",
+        "output_ownership",
+        "attribution_or_watermark_required",
+        "commercial_licence_cost",
+        "licence_url"
+      ]
+    },
+
+    {
+      "id": "3_hardware_requirements",
+      "title": "How big a machine the model needs",
+      "goal": "Determine the minimum and recommended GPU footprint per model.",
+      "questions": [
+        "What is the VRAM requirement at full precision (fp16/bf16) and quantised (fp8, int8, int4)?",
+        "What quality loss comes with quantisation?",
+        "Does it fit on a single GPU, or does it need multi-GPU sharding?",
+        "What is the minimum viable GPU (L4, A10G, L40S, A100 40/80GB, H100, H200, B200)?",
+        "What is the recommended GPU for production latency?",
+        "How much system RAM, vCPU and disk are needed alongside the GPU?",
+        "How large are the weights on disk, and how long is cold-start model load time?"
+      ],
+      "collect": [
+        "vram_required_fp16_gb",
+        "vram_required_quantised_gb",
+        "quantisation_quality_impact",
+        "min_gpu",
+        "recommended_gpu",
+        "multi_gpu_required",
+        "system_ram_gb",
+        "vcpu_count",
+        "disk_gb",
+        "weights_size_gb",
+        "cold_start_seconds"
+      ]
+    },
+
+    {
+      "id": "4_throughput",
+      "title": "How fast it generates — the number that converts hardware cost into unit cost",
+      "goal": "Measure or source generation time per output, since cost per image = GPU hourly rate ÷ images per hour.",
+      "questions": [
+        "How many seconds per image at our target resolution, on each candidate GPU?",
+        "How many seconds to generate one 5-second video clip?",
+        "What batch size fits in VRAM, and what is the throughput gain from batching?",
+        "What is the effect of step count / scheduler choice on time and quality?",
+        "What speedups are available (torch.compile, TensorRT, xFormers, distilled/turbo variants) and what do they cost in quality?",
+        "What is the realistic GPU utilisation percentage in production, accounting for idle time between jobs?"
+      ],
+      "collect": [
+        "seconds_per_image_by_gpu",
+        "seconds_per_5s_video_by_gpu",
+        "optimal_batch_size",
+        "images_per_hour_per_gpu",
+        "clips_per_hour_per_gpu",
+        "optimisations_applied",
+        "assumed_utilisation_percent"
+      ]
+    },
+
+    {
+      "id": "5_deployment_target",
+      "title": "Where to deploy",
+      "goal": "Compare deployment models, not just providers — the serving pattern drives cost more than the vendor.",
+      "questions": [
+        "Serverless GPU (per-second billing, scale-to-zero) vs always-on VM vs managed Kubernetes vs reserved/committed capacity — which fits our traffic shape?",
+        "What is our traffic shape: steady, bursty, or batch-scheduled overnight?",
+        "Does the DNA-generator pipeline allow queued/batch processing, which would let us run cheaper spot or scheduled capacity?",
+        "Does scale-to-zero cold start (model load time) break our latency budget?",
+        "Do we need multi-region, and does that multiply the idle-capacity cost?"
+      ],
+      "collect": [
+        "serving_pattern (serverless | always_on | k8s | reserved | hybrid)",
+        "traffic_shape",
+        "peak_concurrent_requests",
+        "daily_volume",
+        "latency_budget_seconds",
+        "batch_tolerant (yes | no)",
+        "scale_to_zero_viable",
+        "regions_required"
+      ]
+    },
+
+    {
+      "id": "6_cloud_pricing",
+      "title": "Which cloud and what it costs",
+      "goal": "Collect verified GPU hourly rates across candidate providers for the GPU classes identified in section 3.",
+      "providers_to_check": [
+        "AWS (EC2 G6/G6e/P5, SageMaker, Bedrock custom)",
+        "Google Cloud (A2/A3/G2, Vertex AI custom serving)",
+        "Azure (NC/ND series, Azure ML)",
+        "Specialist GPU clouds: RunPod, Lambda Labs, CoreWeave, Vast.ai, Together, Nebius, Crusoe",
+        "Serverless GPU platforms: Modal, Replicate deployments, Baseten, RunPod Serverless, fal.ai private endpoints",
+        "India-region options and their availability of the required GPU class"
+      ],
+      "questions": [
+        "What is the on-demand hourly rate for each required GPU class, per provider and per region?",
+        "What are the spot/preemptible rates and how reliable is availability?",
+        "What discount do 1-year and 3-year commitments give?",
+        "Is the required GPU class actually available in an India or nearby region?",
+        "What is billed on top of GPU time: storage, egress, load balancer, idle reservation, control plane?",
+        "What is the minimum billing increment (per-second, per-minute, per-hour)?"
+      ],
+      "collect": [
+        "provider",
+        "region",
+        "gpu_class",
+        "on_demand_usd_per_hour",
+        "spot_usd_per_hour",
+        "committed_1yr_usd_per_hour",
+        "billing_granularity",
+        "gpu_availability_in_india",
+        "official_pricing_url",
+        "date_checked"
+      ]
+    },
+
+    {
+      "id": "7_hidden_costs",
+      "title": "Everything that is not GPU time",
+      "goal": "Capture the costs that make self-hosting look cheaper than it is.",
+      "questions": [
+        "Object storage for generated assets and model weights — cost per GB per month",
+        "Egress/bandwidth cost for serving images and video out to users or CDN",
+        "CDN cost",
+        "Idle GPU cost: capacity paid for but not generating",
+        "Cold-start waste: GPU seconds spent loading weights",
+        "Failed/retried generations that still consume GPU time",
+        "Engineering time to build, deploy and maintain the serving stack — one-off and recurring",
+        "On-call, monitoring, logging and observability tooling",
+        "Autoscaling headroom kept warm for traffic spikes",
+        "Content-safety / NSFW filtering, which hosted APIs include for free",
+        "Model upgrade cost: re-benchmarking and redeploying when a new open-weight release lands"
+      ],
+      "collect": [
+        "storage_usd_per_month",
+        "egress_usd_per_month",
+        "cdn_usd_per_month",
+        "idle_gpu_usd_per_month",
+        "engineering_setup_hours",
+        "engineering_maintenance_hours_per_month",
+        "engineering_hourly_cost",
+        "observability_usd_per_month",
+        "safety_filtering_approach_and_cost"
+      ]
+    },
+
+    {
+      "id": "8_unit_economics",
+      "title": "Cost per image and per clip — the comparable number",
+      "goal": "Reduce everything above to the same unit used in 03-research-report.md.",
+      "formulas": {
+        "images_per_hour": "3600 / seconds_per_image × optimal_batch_size × utilisation_percent",
+        "gpu_cost_per_image": "gpu_usd_per_hour / images_per_hour",
+        "all_in_cost_per_image": "gpu_cost_per_image + (monthly_fixed_costs / monthly_image_volume)",
+        "cost_per_usable_image": "all_in_cost_per_image / usable_output_rate",
+        "inr_per_image": "all_in_cost_per_image × usd_to_inr",
+        "images_per_100_inr": "100 / inr_per_image",
+        "breakeven_volume": "monthly_fixed_costs / (hosted_api_price_per_image - gpu_cost_per_image)"
+      },
+      "collect": [
+        "gpu_cost_per_image",
+        "all_in_cost_per_image",
+        "inr_per_image",
+        "images_per_100_inr",
+        "gpu_cost_per_5s_clip",
+        "all_in_cost_per_5s_clip",
+        "inr_per_clip",
+        "clips_per_1000_inr",
+        "monthly_fixed_costs"
+      ]
+    },
+
+    {
+      "id": "9_breakeven_vs_hosted",
+      "title": "At what volume does self-hosting win",
+      "goal": "Answer the actual decision question rather than producing a raw cost number.",
+      "questions": [
+        "At what monthly image volume does self-hosted total cost drop below Gemini 3 Pro Image batch (₹6.37/image)?",
+        "At what monthly clip volume does it drop below Veo 3.1 Fast 1080p (₹71.25/clip)?",
+        "How does the breakeven shift if we include engineering time?",
+        "How does it shift at 50% vs 90% GPU utilisation?",
+        "Is the quality gap large enough that a cheaper self-hosted image needs more retries, erasing the saving?",
+        "What is the hybrid option: self-host bulk generation, use hosted APIs for hero/final assets?"
+      ],
+      "collect": [
+        "breakeven_images_per_month",
+        "breakeven_clips_per_month",
+        "breakeven_with_engineering_included",
+        "sensitivity_to_utilisation",
+        "recommended_strategy (self_host | hosted | hybrid)"
+      ]
+    },
+
+    {
+      "id": "10_risk_and_ops",
+      "title": "Non-cost factors that can decide it anyway",
+      "goal": "Record the operational risks that a pure cost comparison hides.",
+      "questions": [
+        "GPU capacity availability — can we actually get the GPUs when we scale?",
+        "Data residency and privacy: does self-hosting solve a compliance requirement that hosted APIs cannot?",
+        "Vendor lock-in and migration cost in both directions",
+        "Quality ceiling: open-weight models currently trail closed models on prompt adherence — quantify the gap",
+        "Fine-tuning upside: does a LoRA on our own DNA/brand data close that gap, and what does training cost?",
+        "Reliability and SLA: self-hosted has no vendor SLA; what uptime can we commit to?",
+        "Team capability: do we have the MLOps skill in-house today?"
+      ],
+      "collect": [
+        "gpu_availability_risk",
+        "compliance_driver",
+        "quality_gap_assessment",
+        "finetune_cost_and_upside",
+        "operational_risk_summary",
+        "team_readiness"
+      ]
+    }
+  ],
+
+  "deliverable": {
+    "file": "05-self-hosted-cost-report.md",
+    "must_contain": [
+      "Shortlist of self-hostable image and video models with licence status",
+      "Hardware requirement table per model",
+      "Cloud GPU pricing table with official links and date checked",
+      "Cost per image and per 5s clip, in USD and INR, using the same 'per ₹100' / 'per ₹1,000' format as 03-research-report.md",
+      "Breakeven volume vs the hosted options",
+      "Clear recommendation: self-host, hosted, or hybrid, with the reason"
+    ],
+    "rules": [
+      "Follow 00-research-instructions.md: verify against official sources, state the verification date, exclude deprecated models, mark unverifiable data as uncertain",
+      "Every pricing row carries its official source link, as in 03-research-report.md",
+      "Focus on high-quality output tiers only; note excluded low tiers rather than listing them"
+    ]
+  }
+}
