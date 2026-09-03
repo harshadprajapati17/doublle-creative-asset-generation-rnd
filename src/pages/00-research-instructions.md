@@ -1,3 +1,8 @@
+---
+layout: ../layouts/Layout.astro
+title: Research Instructions
+---
+
 ## Research Instruction
 
 Current model knowledge may be outdated.

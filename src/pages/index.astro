@@ -1,0 +1,29 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+const docs = [
+  { href: '/calculator', title: 'Cost Calculator', note: 'Interactive — adjust images/month' },
+  { href: '/06-decision-doc', title: 'Decision Doc', note: 'Recommended path — start here' },
+  { href: '/03-research-report', title: 'Research Report', note: 'API / hosted models & pricing' },
+  { href: '/05-self-hosted-cost-report', title: 'Self-Hosted Cost Report', note: 'GPU cost model & open weights' },
+  { href: '/01-market-research', title: 'Market Research', note: 'Landscape & providers' },
+  { href: '/02-model-evaluation', title: 'Model Evaluation', note: 'Eval plan & prompts' },
+  { href: '/00-research-instructions', title: 'Research Instructions', note: 'How we keep sources current' },
+  { href: '/04-self-hosted-research-harness.json', title: 'Self-Hosted Research Harness', note: 'JSON checklist (raw)' },
+];
+---
+
+<Layout title="Image Gen R&D">
+  <h1>Image &amp; Video Generation R&amp;D</h1>
+  <p>Internal research notes. Edit the markdown in the repo — this site rebuilds on push.</p>
+  <ul class="docs">
+    {docs.map((d) => (
+      <li>
+        <a href={d.href}>
+          {d.title}
+          <span>{d.note}</span>
+        </a>
+      </li>
+    ))}
+  </ul>
+</Layout>

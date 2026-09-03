@@ -1,7 +1,13 @@
+---
+layout: ../layouts/Layout.astro
+title: Decision Doc
+---
+
 # Decision Doc — Image & Video Generation
 
 Verified Sep 3, 2026 · 1 USD = ₹95.00 · Two tables, one decision each.
 Detail and workings: `03-research-report.md` (API/hosted) and `05-self-hosted-cost-report.md` (self-host).
+**What-if volume:** [Cost calculator](/calculator) — drag images/month to recalculate.
 
 ## The two approaches, side by side
 
@@ -9,7 +15,7 @@ Detail and workings: `03-research-report.md` (API/hosted) and `05-self-hosted-co
 |---|---|---|
 | Who owns the GPU | Provider | **We do (rented cloud GPU)** |
 | What we pay for | **Each generated image/clip** | **GPU time** — per active second (serverless) or 24×7 (pod) |
-| Infrastructure work | None | Serving stack, queue, autoscale, safety filters, upgrades |
+| Infrastructure work | None | We set up and maintain the server, scaling, safety filters and model updates |
 | Model weights | Closed, not downloadable | **Open weights we download and run** |
 | Licence | Commercial rights included in the price | Depends on the weight — Apache 2.0 free, or paid licence, or revenue-capped |
 | Quality today | **Higher** (Gemini 3 Pro Image, Veo 3.1) | Lower — open weights trail on prompt adherence |
@@ -17,7 +23,56 @@ Detail and workings: `03-research-report.md` (API/hosted) and `05-self-hosted-co
 | Data residency | Data leaves our network | **Stays in our network** |
 | Cost at 10k images/mo | ₹63,650 | **₹364** (serverless) or ₹54,787 (24×7 pod) |
 
-**Billing rule that decides everything in group B:** *Serverless* bills only active generation seconds. *Pods/VMs* bill wall-clock 24×7 whether or not you generate. At 10k images/month a pod sits **0.76% utilised** — 5.6 GPU-hours of real work against 730 hours billed.
+## Inside Group B: Serverless vs Pod
+
+If we self-host, we still choose **how** we rent the GPU. This changes the bill by up to 150×.
+
+> Full plain-language explanation, worked examples and the model-load-time calculation: **[`07-explainer-pod-vs-serverless.md`](./07-explainer-pod-vs-serverless)**
+
+| | **B1. SERVERLESS** (RunPod, Modal) | **B2. POD / VM** (RunPod Pod, HF Endpoints, AWS, Alibaba EAS) |
+|---|---|---|
+| We pay for | Only the seconds the GPU is generating | Every second the machine exists, 24×7 |
+| Bill shape | Varies with volume | **Fixed** — same at 10 images or 500,000 |
+| Hourly rate | Higher (L40S $1.75/hr RunPod) | Lower (L40S $0.79/hr RunPod Community) |
+| Cheaper when | GPU busy **under ~45%** of the month | GPU busy **over ~45%** of the month |
+| Our situation | **Under 1% busy** → this one | Not close |
+
+### Platform rates (validated Sep 3, 2026)
+
+Same GPU class, different landlords. Only public rates we opened and confirmed are used in the calculator.
+
+| Platform | Billing shape | Scale to 0? | L4 $/hr | L40S $/hr | ₹/mo @ 10k imgs (gen-only / fixed) | Source |
+|---|---|---|---|---|---|---|
+| **RunPod** | Serverless + Pods | Yes (flex) | **$0.69** serverless | **$1.75** serverless · $0.79 pod | **₹364** / ₹54,787 | [runpod.io/pricing](https://www.runpod.io/pricing) · browser OK |
+| **Modal** | Serverless only | Yes | **$0.80** ($0.000222/s) | **$1.95** ($0.000542/s) | **₹422** / — | [modal.com/pricing](https://modal.com/pricing) · browser OK |
+| **Hugging Face Endpoints** | Dedicated replica (pod) | Optional | **$0.70** GCP · $0.80 AWS | **$1.80** AWS | **₹48,545** (GCP L4 min=1) | [HF pricing](https://huggingface.co/docs/inference-endpoints/en/pricing) · browser OK |
+| **AWS EC2** | Always-on VM | No | **$0.80** g6.xlarge | — | **₹55,813** | [AWS on-demand](https://aws.amazon.com/ec2/pricing/on-demand/) |
+| **Alibaba PAI-EAS** | Always-on pay-as-you-go | No* | **console only** | console only | — not in calc | [EAS billing](https://help.aliyun.com/en/pai/product-overview/billing-of-eas) |
+
+\*Alibaba serverless exists **only for SDWebUI**, not custom FLUX. GPU unit prices are region-specific and shown in the PAI console — we refuse to invent a $/hr.
+
+**Team takeaway:** Hugging Face and Alibaba are both **pod-class** for our use case. At 10k images/month they cost roughly the same order as a RunPod Pod (~₹50k), not RunPod Serverless (~₹400). Live filter: [calculator](/calculator).
+
+**At our volumes:**
+
+| Volume | GPU actually working | Serverless L4 | Pod L40S (fixed) | Hosted API |
+|---|---|---|---|---|
+| 10,000 images/month | 5.6 of 730 hours (under 1%) | **₹364** * | ₹54,787 | ₹63,650 |
+| 100,000 images/month | 55.6 hours (8%) | **₹3,642** * | ₹54,787 | ₹6,36,500 |
+| 1,000 video clips/month | 150 hours (21%) | ₹9,832 * | ₹54,787 | ₹71,250 |
+
+**\* Warning — these serverless figures assume zero model load time.** Serverless also bills the time the GPU spends loading the 10–20 GB model file before it can generate anything, plus a short idle wait afterwards. Loaded once per wake-up, this is cheap if we generate many images per wake-up and expensive if we generate one at a time.
+
+| 10,000 images/month, RunPod Serverless L4 | ₹ / month |
+|---|---|
+| Ignoring model load time (the figure above) | ₹364 |
+| **Best case** — snapshot restore, batches of 100, 60 s idle window | **₹480** |
+| **Well tuned** — weights cached, batches of 50, 60 s idle window | **₹656** |
+| **Naive** — platform defaults, one image per wake-up, weights downloaded each boot | **₹14,020** |
+
+Self-hosting still beats the hosted API even in the naive case, but the margin drops from ~175× to about 4.5×. The fixes are standard and mostly free — bake the weights into the container image, turn on FlashBoot or Modal GPU snapshots, and set a 60 s idle timeout. **These are mandatory if we pilot self-hosting, not optimisations.** Seven techniques with costs, and a live what-if: [`07-explainer-pod-vs-serverless.md`](./07-explainer-pod-vs-serverless) · [calculator](/calculator).
+
+**Conclusion:** serverless wins at every volume we plan for. We would need roughly **half a million images a month** before an always-on Pod saves money.
 
 ---
 
@@ -111,7 +166,7 @@ Volume basis: **10,000 generated images/month**, 1024²-class high quality. Self
       <td>₹5.48</td>
       <td>18</td>
       <td>₹54,787 <i>fixed</i></td>
-      <td>CONDITIONAL — only above <b>8,600 img/mo</b>, else hosted is cheaper</td>
+      <td>REJECTED at our volume — beats hosted only above 8,600 img/mo, but <b>serverless beats it until ~593,000 img/mo</b></td>
     </tr>
     <tr style="background:#fdf3e6">
       <td>AWS <b>g6.xlarge</b> L4<br/><b>24×7 wall-clock</b></td>
@@ -119,7 +174,7 @@ Volume basis: **10,000 generated images/month**, 1024²-class high quality. Self
       <td>₹5.58</td>
       <td>18</td>
       <td>₹55,813 <i>fixed</i></td>
-      <td>CONDITIONAL — above <b>8,800 img/mo</b>; Mumbai region available</td>
+      <td>REJECTED — L4 serverless is cheaper <b>per hour too</b> ($0.69 vs $0.8048), so this pod never wins; keep only for Mumbai data residency</td>
     </tr>
     <tr style="background:#fdeeee">
       <td><b>FLUX.2 [klein] 9B</b><br/><b>FLUX.2 [dev]</b> 32B</td>
@@ -140,13 +195,20 @@ Volume basis: **10,000 generated images/month**, 1024²-class high quality. Self
   </tbody>
 </table>
 
-**Image decision:** stay on **Gemini 3 Pro Image batch (Group A)** for production. Pilot **FLUX.2 klein 4B on RunPod Serverless L4 (Group B)** for bulk and draft volume. Do not buy a 24×7 pod below ~8,600 images/month. Blocking unknown: klein 4B's usable-output rate on our DNA prompts.
+**Image decision:** stay on **Gemini 3 Pro Image batch (Group A)** for production. Pilot **FLUX.2 klein 4B on RunPod Serverless L4 (Group B1)** for bulk and draft volume. **Do not provision a 24×7 pod (B2)** — serverless is cheaper until roughly 593,000 images/month, far beyond our plan. Blocking unknown: klein 4B's usable-output rate on our DNA prompts.
 
 ---
 
 # TABLE 2 — VIDEO
 
-Volume basis: **1,000 generated 5-second clips/month**. Self-host assumes Wan 2.2 TI2V-5B.
+**Every row below delivers the same thing: one clip that is 5 seconds long.** Costs are normalised to that 5-second output so the rows are directly comparable. Volume basis: **1,000 such clips per month**.
+
+Two different durations appear in this table — do not confuse them:
+
+- **Clip length = 5 s** — the length of the video we get. Fixed for every row.
+- **Generation time** — how long the GPU works to produce those 5 seconds. Seconds on a hosted API, **5–9 minutes** on self-hosted Wan 2.2. This is what self-host cost is billed against.
+
+Every cost column is anchored to that same 5-second clip: `₹ per clip` is one 5 s clip, `5 s clips per ₹1,000` counts 5 s clips, and `₹ / month` is **1,000 × the 5 s clip price**. The only exception is the always-on Pod row, where the monthly figure is a fixed rental and the per-clip price is derived by dividing it across 1,000 clips.
 
 <table>
   <thead>
@@ -156,23 +218,25 @@ Volume basis: **1,000 generated 5-second clips/month**. Self-host assumes Wan 2.
       <th>Hardware we must run</th>
       <th>Deploy &amp; billing unit</th>
       <th>Rate</th>
-      <th>Output quality</th>
-      <th>₹ / 5s clip</th>
-      <th>Clips per ₹1,000</th>
-      <th>₹ / month @ 1k</th>
+      <th>Output<br/><b>(clip length 5 s)</b></th>
+      <th>Generation<br/>time per clip</th>
+      <th>₹ per clip<br/><b>(5 s of video)</b></th>
+      <th>5 s clips<br/>per ₹1,000</th>
+      <th>₹ / month<br/>@ 1,000 clips<br/><b>(5 s each)</b></th>
       <th>Verdict</th>
     </tr>
   </thead>
   <tbody>
-    <tr><td colspan="10" style="background:#0b5394;color:#ffffff"><b>GROUP A — API / HOSTED</b> · no GPUs, no ops · billed <b>per second of video</b> · commercial rights included</td></tr>
+    <tr><td colspan="11" style="background:#0b5394;color:#ffffff"><b>GROUP A — API / HOSTED</b> · no GPUs, no ops · billed <b>per second of finished video</b> · commercial rights included</td></tr>
     <tr style="background:#eaf2fb">
       <td><b>Veo 3.1 Fast</b> (Google)</td>
       <td>Hosted API — full commercial</td>
       <td><b>None</b> — provider's GPUs</td>
-      <td>API · <b>per video second</b></td>
-      <td>$0.15 / s</td>
-      <td><b>1080p + native audio</b><br/>seconds latency</td>
-      <td><b>₹71.25</b></td>
+      <td>API · <b>per second of video</b></td>
+      <td>$0.15 / video-sec</td>
+      <td><b>1080p + native audio</b><br/>max clip 8 s, extendable</td>
+      <td>seconds</td>
+      <td><b>₹71.25</b><br/><i>5 × $0.15</i></td>
       <td><b>14</b></td>
       <td><b>₹71,250</b></td>
       <td><b>PRIMARY</b> — best quality/price with audio</td>
@@ -181,53 +245,58 @@ Volume basis: **1,000 generated 5-second clips/month**. Self-host assumes Wan 2.
       <td><b>Kling 3.0 Pro</b> (Kuaishou)</td>
       <td>Hosted API — full commercial</td>
       <td><b>None</b> — provider's GPUs</td>
-      <td>API · <b>per video second</b></td>
-      <td>$0.168 / s</td>
-      <td>1080p + audio, up to 15s</td>
-      <td>₹79.80</td>
+      <td>API · <b>per second of video</b></td>
+      <td>$0.168 / video-sec</td>
+      <td>1080p + audio<br/>max clip 15 s</td>
+      <td>seconds</td>
+      <td>₹79.80<br/><i>5 × $0.168</i></td>
       <td>12</td>
       <td>₹79,800</td>
-      <td>Alternate — longer clips, strong motion</td>
+      <td>Alternate — longer clips available, strong motion</td>
     </tr>
     <tr style="background:#eaf2fb">
       <td><b>Veo 3.1 Standard</b></td>
       <td>Hosted API — full commercial</td>
       <td><b>None</b> — provider's GPUs</td>
-      <td>API · <b>per video second</b></td>
-      <td>$0.40 / s</td>
-      <td>1080p + audio, top fidelity</td>
-      <td>₹190.00</td>
+      <td>API · <b>per second of video</b></td>
+      <td>$0.40 / video-sec</td>
+      <td>1080p + audio, top fidelity<br/>max clip 8 s</td>
+      <td>seconds</td>
+      <td>₹190.00<br/><i>5 × $0.40</i></td>
       <td>5</td>
       <td>₹1,90,000</td>
       <td>Hero / final assets only</td>
     </tr>
-    <tr><td colspan="10" style="background:#38761d;color:#ffffff"><b>GROUP B — SELF-HOSTED (open weights on our rented GPUs)</b> · billed <b>per GPU-time</b>, not per clip · we own the serving stack</td></tr>
+    <tr><td colspan="11" style="background:#38761d;color:#ffffff"><b>GROUP B — SELF-HOSTED (open weights on our rented GPUs)</b> · billed <b>per GPU-second of generation time</b>, not per second of video · we own the serving stack</td></tr>
     <tr style="background:#fdf3e6">
-      <td rowspan="3"><b>Wan 2.2 TI2V-5B</b><br/><i>open weights, 5B params</i></td>
+      <td rowspan="3"><b>Wan 2.2 TI2V-5B</b><br/><i>open weights, 5B params</i><br/>native output <b>5 s @ 720p 24fps</b></td>
       <td rowspan="3"><b>Apache 2.0</b><br/>free commercial<br/>we own outputs</td>
       <td rowspan="3">≥24 GB VRAM w/ offload<br/><b>L40S 48GB</b> recommended<br/>~20–40 GB weights</td>
-      <td>RunPod <b>Serverless</b> L40S<br/><b>per active second</b></td>
-      <td>$1.75 / hr</td>
-      <td><b>720p, NO audio</b><br/>~5 min latency</td>
-      <td>₹13.9 <i>(300s)</i></td>
+      <td>RunPod <b>Serverless</b> L40S<br/><b>per active GPU-second</b></td>
+      <td>$1.75 / GPU-hr</td>
+      <td><b>720p, NO audio</b><br/>max clip 5 s</td>
+      <td><b>~300 s</b> (5 min)<br/><i>optimistic</i></td>
+      <td>₹13.9<br/><i>300 GPU-s × $1.75/hr</i></td>
       <td>72</td>
       <td>₹13,854</td>
       <td>CONDITIONAL — cheapest, but far below Veo on quality</td>
     </tr>
     <tr style="background:#fdf3e6">
-      <td>RunPod <b>Serverless</b> L40S<br/><b>per active second</b></td>
-      <td>$1.75 / hr</td>
-      <td>720p, no audio<br/>~9 min latency</td>
-      <td>₹24.9 <i>(540s)</i></td>
+      <td>RunPod <b>Serverless</b> L40S<br/><b>per active GPU-second</b></td>
+      <td>$1.75 / GPU-hr</td>
+      <td>720p, no audio<br/>max clip 5 s</td>
+      <td><b>~540 s</b> (9 min)<br/><i>conservative</i></td>
+      <td>₹24.9<br/><i>540 GPU-s × $1.75/hr</i></td>
       <td>40</td>
       <td>₹24,938</td>
       <td>CONDITIONAL — conservative speed case</td>
     </tr>
     <tr style="background:#fdf3e6">
-      <td>Modal <b>Serverless</b> L40S<br/><b>per active second</b></td>
-      <td>$1.95 / hr</td>
-      <td>720p, no audio</td>
-      <td>₹27.8 <i>(540s)</i></td>
+      <td>Modal <b>Serverless</b> L40S<br/><b>per active GPU-second</b></td>
+      <td>$1.95 / GPU-hr</td>
+      <td>720p, no audio<br/>max clip 5 s</td>
+      <td><b>~540 s</b> (9 min)</td>
+      <td>₹27.8<br/><i>540 GPU-s × $1.95/hr</i></td>
       <td>36</td>
       <td>₹27,788</td>
       <td>CONDITIONAL — same trade-off</td>
@@ -238,8 +307,9 @@ Volume basis: **1,000 generated 5-second clips/month**. Self-host assumes Wan 2.
       <td>L40S 48GB</td>
       <td>RunPod <b>Pod</b> L40S Community<br/><b>24×7 wall-clock</b></td>
       <td>$0.79 / hr</td>
-      <td>720p, no audio</td>
-      <td>₹54.8</td>
+      <td>720p, no audio<br/>max clip 5 s</td>
+      <td>~540 s</td>
+      <td>₹54.8<br/><i>fixed ÷ 1,000 clips</i></td>
       <td>18</td>
       <td>₹54,787 <i>fixed</i></td>
       <td>REJECTED — near Veo cost for far worse output</td>
@@ -248,9 +318,10 @@ Volume basis: **1,000 generated 5-second clips/month**. Self-host assumes Wan 2.
       <td><b>Wan 2.2 A14B</b></td>
       <td>Apache 2.0</td>
       <td>~80 GB → H100 class</td>
-      <td>Serverless H100 $4.79/hr</td>
+      <td>Serverless H100 $4.79/GPU-hr</td>
       <td>—</td>
       <td>720p, no audio</td>
+      <td>not benchmarked</td>
       <td>—</td><td>—</td><td>—</td>
       <td>REJECTED — not benchmarked, H100 cost kills it</td>
     </tr>
@@ -260,7 +331,8 @@ Volume basis: **1,000 generated 5-second clips/month**. Self-host assumes Wan 2.
       <td><i>Cannot self-host</i></td>
       <td>Not available as weights</td>
       <td>—</td>
-      <td>up to 15s</td>
+      <td>max clip 15 s (via API only)</td>
+      <td>—</td>
       <td>—</td><td>—</td><td>—</td>
       <td>REJECTED — self-hosting impossible</td>
     </tr>
@@ -269,11 +341,15 @@ Volume basis: **1,000 generated 5-second clips/month**. Self-host assumes Wan 2.
       <td>Hosted API</td>
       <td><b>None</b></td>
       <td>API</td>
-      <td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>
+      <td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>
       <td>REJECTED — API sunsets <b>Sep 24, 2026</b></td>
     </tr>
   </tbody>
 </table>
+
+**How to read a Group A vs Group B cost:** Veo 3.1 Fast bills the 5 seconds of video we receive → 5 × $0.15 = $0.75 = ₹71.25. Wan 2.2 bills the ~300–540 seconds the GPU spent producing those same 5 seconds → 300 × ($1.75 ÷ 3600) = $0.146 = ₹13.9. Same 5-second deliverable, two completely different billing units.
+
+**If we needed 10-second clips instead:** every Group A figure doubles (billed per video second). Group B does not simply double — Wan 2.2 TI2V-5B caps at 5 s natively, so a 10 s output needs two generations plus stitching, or a different model.
 
 **Video decision:** stay fully on **Group A / Veo 3.1 Fast**. Self-hosting saves money on paper but delivers 720p without audio at minutes-per-clip latency, and on a 24×7 pod the saving disappears entirely. Revisit only when an open model ships 1080p with native audio.
 

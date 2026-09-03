@@ -1,3 +1,8 @@
+---
+layout: ../layouts/Layout.astro
+title: Model Evaluation
+---
+
 # AI Image & Video Generation — Model Evaluation
 
 ## Objective

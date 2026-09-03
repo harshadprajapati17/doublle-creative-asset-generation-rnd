@@ -1,3 +1,8 @@
+---
+layout: ../layouts/Layout.astro
+title: Self-Hosted Cost Report
+---
+
 # Self-Hosted Image/Video — Cost Research Report
 
 Verified: Sep 3, 2026. Follows `04-self-hosted-research-harness.json`.
@@ -92,7 +97,7 @@ The first draft wrongly applied a 70% utilisation divisor to serverless and appl
 
 # 5. Billing model — the decisive factor
 
-| Product | You pay for | Idle cost | Fits our DNA queue? |
+| Product | You pay for | Idle cost | Fits our usage pattern? |
 |---|---|---|---|
 | **RunPod Serverless** | active seconds, scale-to-zero | none | **Yes** |
 | **Modal** | active seconds, scale-to-zero | none | **Yes** |
@@ -247,7 +252,7 @@ Excludes cold-start seconds (model load billed as active time on both platforms)
 | **BFL licence (9B/[dev])** | Unknown fixed $ | Needed to close the quality gap; price not public |
 | **Cold starts** | 5–15% on serverless | Weight load is billed as active seconds |
 | **Idle GPU** | Kills pods | The entire finding of §5 |
-| **Engineering** | Fixed, recurring | Serving stack, queue, autoscaling, safety filters, model upgrades |
+| **Engineering** | Fixed, recurring | Server setup, scaling, safety filters, model upgrades |
 | **Safety filtering** | Extra | Hosted APIs include it; self-host must add Hive/Azure/etc. |
 | **Egress + storage** | Small for images, real for video | Add CDN for delivery |
 

@@ -1,3 +1,8 @@
+---
+layout: ../layouts/Layout.astro
+title: Market Research
+---
+
 # AI Image & Video Generation — Market Research
 
 ## Objective

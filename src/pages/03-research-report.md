@@ -1,3 +1,8 @@
+---
+layout: ../layouts/Layout.astro
+title: Research Report
+---
+
 # AI Image & Video Generation — Research Report
 
 Verified: Sep 2, 2026. Prices are provider list rates from the official pages linked inside each table row.
@@ -11,7 +16,7 @@ Implications for model choice:
 
 - **Prompt adherence is the primary selection criterion** — DNA prompts are long and attribute-dense, so the model must honour every attribute, not just the overall vibe.
 - **Reference-image conditioning matters more than fine-tuning** — subject/product consistency across a DNA set comes from passing the approved still as a reference, not from training.
-- **Generation is asynchronous** (DNA → prompt → queue → image), so **batch tiers are usable**, which halves cost on Google and OpenAI.
+- **Batch tiers may halve the cost on Google and OpenAI**, but only if a generation can wait rather than returning immediately. *Assumption to confirm:* whether the DNA generator's output can tolerate a delayed image. If every image must come back in real time, batch pricing does not apply and all Google/OpenAI figures below should be read at the Standard rate, not the Batch rate.
 - **Text input cost is negligible.** A ~300-token DNA prompt costs ~₹0.14 on GPT Image 2 and ~₹0.06 on Gemini 3 Pro Image. Image output tokens dominate; ignore prompt cost in budgeting.
 
 ---
@@ -274,7 +279,7 @@ At a 50% usable rate, double each total. Not included: storage/CDN, aggregator m
 
 - Reference-image workflows for subject/product consistency (Gemini 3 Pro Image up to 14 refs, Seedance 2.0 up to 9, Runway References)
 - Image-to-video: lock an approved still from the DNA prompt, then animate — better consistency and cheaper than text-to-video
-- Batch tiers for the DNA → image queue: flat 50% saving on Google and OpenAI
+- Batch tiers: flat 50% saving on Google and OpenAI, if delayed delivery of an image is acceptable
 - Multi-candidate generation with automated selection, since real cost is driven by the usable-output rate
 - Multi-model routing via fal.ai / Replicate for benchmarking; move winners to direct provider APIs
 - Fine-tuning only on FLUX (open weights); closed models offer reference conditioning instead

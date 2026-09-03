@@ -1,0 +1,1610 @@
+---
+import Layout from '../layouts/Layout.astro';
+import rates from '../data/rates.json';
+---
+
+<Layout title="Cost Calculator">
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
+
+  <div class="calc" id="calc">
+    <header class="calc-head">
+      <p class="eyebrow">What-if · verified {rates.verified}</p>
+      <h1>How much will generation cost?</h1>
+      <p class="lead">
+        Pick image or video, set monthly volume, compare hosted vs self-host. Click any name to open
+        that provider’s pricing page.
+      </p>
+    </header>
+
+    <div class="sticky-controls">
+      <div class="mode" role="tablist" aria-label="Media type">
+        <button type="button" class="mode-btn is-active" data-mode="image" role="tab" aria-selected="true">
+          Images
+        </button>
+        <button type="button" class="mode-btn" data-mode="video" role="tab" aria-selected="false">
+          Video clips
+        </button>
+      </div>
+
+      <section class="panel volume-panel">
+        <label class="volume-label" for="volumeNum">
+          <span id="volumeLabel">Images per month</span>
+          <strong class="volume-display" id="volumeDisplay">10,000</strong>
+        </label>
+        <div class="volume-row">
+          <input type="range" id="volume" min="100" max="200000" step="100" value={rates.image.defaultVolume} />
+          <input type="number" id="volumeNum" min="1" max="1000000" step="100" value={rates.image.defaultVolume} />
+        </div>
+        <p class="hint" id="volumeHint"></p>
+        <p class="crossover" id="crossover"></p>
+
+        <details class="assumptions">
+          <summary>Assumptions</summary>
+          <div class="assumptions-grid">
+            <label>
+              <span id="secsLabel">Seconds / image (self-host)</span>
+              <input type="number" id="secs" min="0.1" max="3600" step="0.1" value={rates.image.defaultSeconds} />
+            </label>
+            <label>
+              <span>USD → INR</span>
+              <input type="number" id="fx" min="1" max="200" step="0.01" value={rates.usdToInr} />
+            </label>
+          </div>
+          <p class="hint" id="assumptionsHint">{rates.image.assumptionsHint}</p>
+        </details>
+      </section>
+    </div>
+
+    <section class="panel load-panel">
+      <div class="load-head">
+        <div>
+          <h2>Model load time <span class="tag">extra cost</span></h2>
+          <p class="hint">
+            Serverless bills the seconds the GPU spends loading the model file before it can
+            generate anything — plus a short idle wait afterwards. Paid once per wake-up.
+            <a href={rates.coldStart.docsUrl} target="_blank" rel="noopener noreferrer">RunPod pricing ↗</a>
+          </p>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="loadOn" checked />
+          <span>Include in prices</span>
+        </label>
+      </div>
+
+      <div class="presets">
+        <span class="presets-label">Setup</span>
+        <div class="preset-btns" id="presetBtns"></div>
+      </div>
+      <p class="preset-desc" id="presetDesc"></p>
+
+      <div class="load-grid">
+        <label>
+          <span>Model (size drives load time)</span>
+          <select id="modelSel"></select>
+        </label>
+        <label>
+          <span>Where weights come from</span>
+          <select id="tierSel"></select>
+        </label>
+        <label>
+          <span id="perWakeLabel">Images per wake-up</span>
+          <input type="number" id="perWake" min="1" max="10000" step="1" value={rates.coldStart.defaultPerWake} />
+        </label>
+        <label>
+          <span>Idle timeout (s, still billed)</span>
+          <input type="number" id="idleSec" min="0" max="600" step="1" value={rates.coldStart.idleTimeoutSeconds} />
+        </label>
+      </div>
+
+      <div class="load-readout" id="loadReadout"></div>
+
+      <details class="tips">
+        <summary>How teams reduce this <span class="tips-count" id="tipsCount"></span></summary>
+        <ul class="tips-list" id="tipsList"></ul>
+      </details>
+    </section>
+
+    <section class="panel compare-panel" id="platformCompare">
+      <div class="load-head">
+        <div>
+          <h2>Platform rates at a glance</h2>
+          <p class="hint">
+            Same L4 / L40S GPU, different landlords. Serverless = pay only while generating.
+            Pod = rent 24×7. Only rows with a verified public $/hr enter the cost table below.
+          </p>
+        </div>
+        <div class="plat-filter" id="platFilter" role="group" aria-label="Filter by platform"></div>
+      </div>
+      <div class="table-wrap">
+        <table class="opt-table compare-table">
+          <thead>
+            <tr>
+              <th>Platform</th>
+              <th>Billing shape</th>
+              <th>Scale to zero?</th>
+              <th>L4 $/hr</th>
+              <th>L40S $/hr</th>
+              <th>₹ / mo @ 10k imgs*</th>
+              <th>Verified</th>
+            </tr>
+          </thead>
+          <tbody id="platBody"></tbody>
+        </table>
+      </div>
+      <p class="hint" id="platFoot">
+        *Serverless month = gen-only at 2 s/image with load excluded. Pod month = full 730 hours.
+        Alibaba has no public GPU $/hr — excluded from calc until the console rate is pasted in.
+      </p>
+    </section>
+
+    <section class="cards" id="cards" aria-live="polite"></section>
+
+    <details class="all-opts" open>
+      <summary>All options <span id="optCount"></span></summary>
+      <div class="table-wrap">
+        <table class="opt-table">
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th>Deploy</th>
+              <th>Platform</th>
+              <th>How billed</th>
+              <th id="perHead">₹ / image</th>
+              <th>
+                ₹ / mo generating
+                <button
+                  type="button"
+                  class="info-tip"
+                  aria-label="What generating cost means"
+                  data-tip="GPU time spent actually making the image or clip — the productive work. For hosted APIs this is the full bill. For serverless this is only the seconds of generation, before model-load overhead."
+                >i</button>
+              </th>
+              <th>
+                + ₹ / mo model load
+                <button
+                  type="button"
+                  class="info-tip"
+                  aria-label="What model load cost means"
+                  data-tip="Extra serverless charge to wake the GPU and load the model file into memory (plus a short idle wait). Paid once per wake-up, then spread across images in that batch. Pods load once at start so this shows “loads once”. Hosted APIs do not charge this separately — “n/a”."
+                >i</button>
+              </th>
+              <th>₹ / mo total</th>
+              <th>vs baseline</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </details>
+
+    <p class="footnote">
+      Rates mirror the <a href="/06-decision-doc">decision doc</a>. Edit
+      <code>src/data/rates.json</code> when providers change prices.
+    </p>
+  </div>
+</Layout>
+
+<script define:vars={{ ratesPayload: rates }}>
+  window.__RATES__ = ratesPayload;
+</script>
+
+<script>
+  type Mode = 'image' | 'video';
+  type Group = 'hosted' | 'serverless' | 'pod';
+  type Opt = {
+    id: string;
+    name: string;
+    provider: string;
+    platformId?: string;
+    group: Group;
+    billing: string;
+    usdPerUnit?: number;
+    usdPerVideoSecond?: number;
+    usdPerHour?: number;
+    gpu?: string;
+    secondsOverride?: number;
+    note: string;
+    pricingUrl: string;
+  };
+  type PlatformRate = {
+    gpu: string;
+    mode: 'serverless' | 'pod';
+    usdPerHour: number | null;
+    note: string;
+  };
+  type Platform = {
+    id: string;
+    name: string;
+    billingShape: string;
+    scaleToZero: boolean;
+    bestFor: string;
+    pricingUrl: string;
+    docsUrl?: string;
+    httpStatus: number;
+    browserValidated: boolean;
+    ratesValidated: boolean;
+    caveat?: string;
+    compare: PlatformRate[];
+  };
+  type ModelDef = { id: string; name: string; sizeGb: number };
+  type Tier = { id: string; label: string; overheadSec: number; gbPerSec: number; note: string };
+  type ModeCfg = {
+    unitLabel: string;
+    unitLabelPlural: string;
+    defaultVolume: number;
+    defaultSeconds: number;
+    volumeMax: number;
+    volumeStep: number;
+    baselineId: string;
+    assumptionsHint: string;
+    clipSeconds?: number;
+    defaultModelId: string;
+    models: ModelDef[];
+    options: Opt[];
+  };
+  type Rates = {
+    usdToInr: number;
+    hoursPerMonth: number;
+    platforms: Platform[];
+    coldStart: {
+      idleTimeoutSeconds: number;
+      defaultPerWake: number;
+      defaultTier: string;
+      docsUrl: string;
+      tiers: Tier[];
+      presets: { id: string; label: string; desc: string; tier: string; perWake: number; idleSec: number }[];
+      tips: { title: string; effect: string; detail: string }[];
+    };
+    image: ModeCfg;
+    video: ModeCfg;
+  };
+
+  const rates = window.__RATES__ as Rates;
+  const GROUPS: { id: Group; title: string; blurb: string }[] = [
+    { id: 'hosted', title: 'Hosted API', blurb: 'Pay per output. No GPUs to run.' },
+    { id: 'serverless', title: 'Self-host · serverless', blurb: 'Pay only while the GPU is generating.' },
+    { id: 'pod', title: 'Self-host · 24×7 pod', blurb: 'Fixed rent — billed even when idle.' },
+  ];
+
+  let mode: Mode = 'image';
+  let platformFilter: string = 'all';
+
+  const volumeEl = document.getElementById('volume') as HTMLInputElement;
+  const volumeNum = document.getElementById('volumeNum') as HTMLInputElement;
+  const volumeDisplay = document.getElementById('volumeDisplay')!;
+  const volumeLabel = document.getElementById('volumeLabel')!;
+  const volumeHint = document.getElementById('volumeHint')!;
+  const crossover = document.getElementById('crossover')!;
+  const secsEl = document.getElementById('secs') as HTMLInputElement;
+  const secsLabel = document.getElementById('secsLabel')!;
+  const fxEl = document.getElementById('fx') as HTMLInputElement;
+  const assumptionsHint = document.getElementById('assumptionsHint')!;
+  const cards = document.getElementById('cards')!;
+  const tbody = document.getElementById('tbody')!;
+  const optCount = document.getElementById('optCount')!;
+  const perHead = document.getElementById('perHead')!;
+  const loadOn = document.getElementById('loadOn') as HTMLInputElement;
+  const modelSel = document.getElementById('modelSel') as HTMLSelectElement;
+  const tierSel = document.getElementById('tierSel') as HTMLSelectElement;
+  const perWakeEl = document.getElementById('perWake') as HTMLInputElement;
+  const perWakeLabel = document.getElementById('perWakeLabel')!;
+  const idleSecEl = document.getElementById('idleSec') as HTMLInputElement;
+  const loadReadout = document.getElementById('loadReadout')!;
+  const presetBtns = document.getElementById('presetBtns')!;
+  const presetDesc = document.getElementById('presetDesc')!;
+  const tipsList = document.getElementById('tipsList')!;
+  const tipsCount = document.getElementById('tipsCount')!;
+  const platFilter = document.getElementById('platFilter')!;
+  const platBody = document.getElementById('platBody')!;
+
+  function cfg() {
+    return rates[mode];
+  }
+
+  function fmtInr(n: number, digits?: number) {
+    const d = digits ?? (n < 10 ? 2 : 0);
+    return (
+      '₹' +
+      n.toLocaleString('en-IN', {
+        maximumFractionDigits: d,
+        minimumFractionDigits: d === 0 ? 0 : Math.min(2, d),
+      })
+    );
+  }
+
+  function fmtVol(n: number) {
+    return n.toLocaleString('en-IN');
+  }
+
+  function billingLabel(b: string) {
+    if (b === 'per_unit') return 'Per image';
+    if (b === 'per_video_second') return 'Per video-second';
+    if (b === 'per_gpu_second') return 'Per GPU-second';
+    return '24×7 fixed';
+  }
+
+  function currentModel(): ModelDef {
+    const c = cfg();
+    return c.models.find((m) => m.id === modelSel.value) ?? c.models[0];
+  }
+
+  function currentTier(): Tier {
+    return rates.coldStart.tiers.find((t) => t.id === tierSel.value) ?? rates.coldStart.tiers[0];
+  }
+
+  /** Load time is driven by model size: fixed container overhead + weights copied into GPU memory. */
+  function loadSeconds(model: ModelDef, tier: Tier) {
+    return tier.overheadSec + model.sizeGb / tier.gbPerSec;
+  }
+
+  /** Load + idle timeout are billed once per wake-up, so they spread across the batch. */
+  function overheadSecondsPerUnit() {
+    if (!loadOn.checked) return 0;
+    const perWake = Math.max(1, Number(perWakeEl.value) || 1);
+    const idle = Math.max(0, Number(idleSecEl.value) || 0);
+    return (loadSeconds(currentModel(), currentTier()) + idle) / perWake;
+  }
+
+  function computeRow(o: Opt, volume: number, secs: number, fx: number, overheadSec: number) {
+    const clipSec = cfg().clipSeconds ?? 5;
+    let generating = 0;
+    let load = 0;
+    if (o.billing === 'per_unit') {
+      generating = (o.usdPerUnit ?? 0) * fx * volume;
+    } else if (o.billing === 'per_video_second') {
+      generating = (o.usdPerVideoSecond ?? 0) * clipSec * fx * volume;
+    } else if (o.billing === 'per_gpu_second') {
+      const s = o.secondsOverride ?? secs;
+      const perSec = (o.usdPerHour ?? 0) / 3600;
+      generating = perSec * s * volume * fx;
+      // Only serverless pays for loading repeatedly — a pod loads once at deploy.
+      load = perSec * overheadSec * volume * fx;
+    } else {
+      generating = (o.usdPerHour ?? 0) * rates.hoursPerMonth * fx;
+    }
+    const monthly = generating + load;
+    return {
+      ...o,
+      generating,
+      load,
+      monthly,
+      perUnit: volume > 0 ? monthly / volume : 0,
+      secsUsed: o.secondsOverride ?? secs,
+    };
+  }
+
+  function setMode(next: Mode) {
+    mode = next;
+    document.querySelectorAll('.mode-btn').forEach((btn) => {
+      const active = (btn as HTMLElement).dataset.mode === mode;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-selected', String(active));
+    });
+    const c = cfg();
+    volumeEl.max = String(c.volumeMax);
+    volumeEl.step = String(c.volumeStep);
+    volumeNum.step = String(c.volumeStep);
+    volumeEl.value = String(c.defaultVolume);
+    volumeNum.value = String(c.defaultVolume);
+    secsEl.value = String(c.defaultSeconds);
+    volumeLabel.textContent = mode === 'image' ? 'Images per month' : 'Video clips per month (5 s each)';
+    secsLabel.textContent =
+      mode === 'image' ? 'Seconds / image (self-host)' : 'GPU seconds / clip (self-host default)';
+    assumptionsHint.textContent = c.assumptionsHint;
+    perHead.textContent = mode === 'image' ? '₹ / image' : '₹ / 5 s clip';
+    perWakeLabel.textContent = mode === 'image' ? 'Images per wake-up' : 'Clips per wake-up';
+    modelSel.innerHTML = c.models
+      .map((m) => `<option value="${m.id}">${m.name} — ${m.sizeGb} GB</option>`)
+      .join('');
+    modelSel.value = c.defaultModelId;
+    render();
+  }
+
+  function applyPreset(id: string) {
+    const p = rates.coldStart.presets.find((x) => x.id === id);
+    if (!p) return;
+    loadOn.checked = true;
+    tierSel.value = p.tier;
+    perWakeEl.value = String(p.perWake);
+    idleSecEl.value = String(p.idleSec);
+    render();
+  }
+
+  /** Highlight whichever preset the current inputs match, or fall back to Custom. */
+  function syncPresetState() {
+    const match = rates.coldStart.presets.find(
+      (p) =>
+        loadOn.checked &&
+        p.tier === tierSel.value &&
+        p.perWake === Number(perWakeEl.value) &&
+        p.idleSec === Number(idleSecEl.value),
+    );
+    presetBtns.querySelectorAll('.preset-btn').forEach((b) => {
+      b.classList.toggle('is-active', (b as HTMLElement).dataset.preset === match?.id);
+    });
+    presetDesc.textContent = match ? match.desc : 'Custom — adjust the fields below, or pick a setup above.';
+  }
+
+  function pickRate(p: Platform, gpuNeedle: string, modeWanted: 'serverless' | 'pod') {
+    const hits = p.compare.filter(
+      (r) => r.mode === modeWanted && r.gpu.toLowerCase().includes(gpuNeedle) && r.usdPerHour != null,
+    );
+    if (!hits.length) return null;
+    return hits.reduce((a, b) => ((a.usdPerHour ?? 99) <= (b.usdPerHour ?? 99) ? a : b));
+  }
+
+  function renderPlatformCompare(fx: number) {
+    const vol = 10000;
+    const secs = 2;
+    platBody.innerHTML = rates.platforms
+      .map((p) => {
+        const sl4 = pickRate(p, 'l4', 'serverless');
+        const pl4 = pickRate(p, 'l4', 'pod');
+        const sl40 = pickRate(p, 'l40s', 'serverless');
+        const pl40 = pickRate(p, 'l40s', 'pod');
+        const l4 = sl4 ?? pl4;
+        const l40 = sl40 ?? pl40;
+        const monthL4 =
+          l4?.usdPerHour == null
+            ? null
+            : l4.mode === 'serverless'
+              ? (l4.usdPerHour / 3600) * secs * vol * fx
+              : l4.usdPerHour * rates.hoursPerMonth * fx;
+        const badge = p.ratesValidated
+          ? '<span class="v-ok">rates OK</span>'
+          : '<span class="v-no">no public $/hr</span>';
+        const browser = p.browserValidated
+          ? '<span class="v-ok">browser</span>'
+          : '<span class="v-warn">docs fetch</span>';
+        const l4Cell = l4?.usdPerHour != null
+          ? `<span class="num">$${l4.usdPerHour.toFixed(2)}</span> <span class="mode-tag ${l4.mode}">${l4.mode}</span>`
+          : '<span class="dim">console only</span>';
+        const l40Cell = l40?.usdPerHour != null
+          ? `<span class="num">$${l40.usdPerHour.toFixed(2)}</span> <span class="mode-tag ${l40.mode}">${l40.mode}</span>`
+          : '<span class="dim">—</span>';
+        const active = platformFilter === p.id ? ' is-filter' : '';
+        return `<tr class="plat-row${active}" data-plat="${p.id}">
+          <td>
+            <a href="${p.pricingUrl}" target="_blank" rel="noopener noreferrer">${p.name} <span class="ext">↗</span></a>
+            <div class="sub">${p.bestFor}${p.caveat ? ` · ${p.caveat}` : ''}</div>
+          </td>
+          <td>${p.billingShape}</td>
+          <td>${p.scaleToZero ? 'Yes' : 'No'}</td>
+          <td>${l4Cell}</td>
+          <td>${l40Cell}</td>
+          <td class="num">${monthL4 == null ? '—' : fmtInr(monthL4)}</td>
+          <td>${badge} ${browser}</td>
+        </tr>`;
+      })
+      .join('');
+  }
+
+  function renderLoadReadout(rows: ReturnType<typeof computeRow>[], volume: number) {
+    const model = currentModel();
+    const tier = currentTier();
+    const secs = loadSeconds(model, tier);
+    const perWake = Math.max(1, Number(perWakeEl.value) || 1);
+    const idle = Math.max(0, Number(idleSecEl.value) || 0);
+    const perUnit = overheadSecondsPerUnit();
+    const sl = rows.filter((r) => r.group === 'serverless').sort((a, b) => a.monthly - b.monthly)[0];
+    syncPresetState();
+
+    if (!loadOn.checked) {
+      loadReadout.innerHTML = `<p class="load-off">Model load excluded — serverless prices below are the optimistic floor. ${model.sizeGb} GB would take about <strong>${secs.toFixed(0)} s</strong> to load with this setting.</p>`;
+      return;
+    }
+
+    const uplift = sl && sl.generating > 0 ? sl.monthly / sl.generating : 1;
+    const share = sl && sl.monthly > 0 ? (sl.load / sl.monthly) * 100 : 0;
+    loadReadout.innerHTML = `
+      <div class="chips">
+        <span class="chip"><b>${model.sizeGb} GB</b> model</span>
+        <span class="chip">loads in <b>${secs.toFixed(0)} s</b></span>
+        <span class="chip">+ <b>${idle} s</b> idle</span>
+        <span class="chip">÷ <b>${fmtVol(perWake)}</b> per wake-up</span>
+        <span class="chip is-out">= <b>${perUnit.toFixed(2)} s</b> extra billed per ${cfg().unitLabel}</span>
+      </div>
+      ${
+        sl
+          ? `<p class="load-sum">On <strong>${sl.name}</strong> at ${fmtVol(volume)} ${cfg().unitLabelPlural}/month:
+             <span class="pill base">${fmtInr(sl.generating)} generating</span>
+             <span class="plus">+</span>
+             <span class="pill extra">${fmtInr(sl.load)} model load</span>
+             <span class="plus">=</span>
+             <span class="pill total">${fmtInr(sl.monthly)}</span>
+             — load is <strong>${share.toFixed(0)}%</strong> of the bill (<strong>${uplift.toFixed(1)}×</strong> the compute-only figure).</p>`
+          : ''
+      }
+      <p class="hint">${tier.note}</p>`;
+  }
+
+  function podCrossover(volume: number, secs: number, fx: number, rows: ReturnType<typeof computeRow>[]) {
+    const cheapestHosted = rows.filter((r) => r.group === 'hosted').sort((a, b) => a.monthly - b.monthly)[0];
+    const pods = rows.filter((r) => r.group === 'pod');
+    if (!cheapestHosted || !pods.length) {
+      crossover.textContent = '';
+      return;
+    }
+    // Find lowest volume where a pod beats cheapest hosted: fixed < hostedPerUnit * v
+    const hostedPer = cheapestHosted.perUnit;
+    if (hostedPer <= 0) {
+      crossover.textContent = '';
+      return;
+    }
+    let best: { name: string; v: number } | null = null;
+    for (const p of pods) {
+      const fixed = (p.usdPerHour ?? 0) * rates.hoursPerMonth * fx;
+      const v = Math.ceil(fixed / hostedPer);
+      if (!best || v < best.v) best = { name: p.name, v };
+    }
+    if (!best) return;
+    if (volume >= best.v) {
+      crossover.textContent = `At this volume, a pod can beat ${cheapestHosted.name.split('·')[0].trim()} on raw ₹ — quality still matters.`;
+    } else {
+      crossover.textContent = `Pods undercut cheapest hosted (~${cheapestHosted.name.split('·')[0].trim()}) above ~${fmtVol(best.v)} ${cfg().unitLabelPlural}/month.`;
+    }
+  }
+
+  function render() {
+    const c = cfg();
+    const volume = Math.max(1, Number(volumeNum.value) || 1);
+    const secs = Math.max(0.1, Number(secsEl.value) || c.defaultSeconds);
+    const fx = Math.max(1, Number(fxEl.value) || rates.usdToInr);
+    volumeEl.value = String(Math.min(Number(volumeEl.max), volume));
+    volumeDisplay.textContent = fmtVol(volume);
+
+    const perDay = volume / 30;
+    volumeHint.textContent = `≈ ${fmtVol(Math.round(perDay))} / day · drag to see where each option wins`;
+
+    const overheadSec = overheadSecondsPerUnit();
+    const allOpts = c.options.filter(
+      (o) =>
+        o.group === 'hosted' ||
+        platformFilter === 'all' ||
+        o.platformId === platformFilter,
+    );
+    // Keep hosted always visible; if filter is Alibaba (no options), still show hosted
+    const rows = allOpts.map((o) => computeRow(o, volume, secs, fx, overheadSec));
+    renderPlatformCompare(fx);
+    renderLoadReadout(rows, volume);
+    const winner = rows.reduce((a, b) => (a.monthly <= b.monthly ? a : b));
+    const baseline = rows.find((r) => r.id === c.baselineId) ?? rows.find((r) => r.group === 'hosted');
+    const maxMo = Math.max(...rows.map((r) => r.monthly), 1);
+
+    podCrossover(volume, secs, fx, rows);
+
+    cards.innerHTML = GROUPS.map((g) => {
+      const groupRows = rows.filter((r) => r.group === g.id).sort((a, b) => a.monthly - b.monthly);
+      if (!groupRows.length) return '';
+      const best = groupRows[0];
+      const isWinner = best.id === winner.id;
+      const bar = Math.max(6, (best.monthly / maxMo) * 100);
+      const delta =
+        baseline && best.id !== baseline.id
+          ? best.monthly < baseline.monthly
+            ? `${(baseline.monthly / best.monthly).toFixed(0)}× cheaper than ${baseline.name.split('·')[0].trim()}`
+            : `+${fmtInr(best.monthly - baseline.monthly)}/mo vs baseline`
+          : 'Baseline';
+      return `<article class="card ${g.id}${isWinner ? ' is-best' : ''}">
+        <div class="card-top">
+          <h2>${g.title}</h2>
+          ${isWinner ? '<span class="badge">Cheapest here</span>' : ''}
+        </div>
+        <p class="blurb">${g.blurb}</p>
+        <a class="card-link" href="${best.pricingUrl}" target="_blank" rel="noopener noreferrer">
+          <span class="card-name">${best.name} <span class="ext">↗</span></span>
+          <span class="card-provider">${best.provider}</span>
+        </a>
+        <p class="card-mo"><span class="num">${fmtInr(best.monthly)}</span><span class="unit">/mo</span></p>
+        <p class="card-unit num">${fmtInr(best.perUnit)} / ${c.unitLabel}${best.billing === 'fixed_month' ? ' effective' : ''}</p>
+        ${
+          best.load > 0
+            ? `<p class="split"><span class="sw base"></span>${fmtInr(best.generating)} generating <span class="sw extra"></span>+${fmtInr(best.load)} model load</p>
+               <div class="bar split-bar" aria-hidden="true"><i style="width:${(best.generating / best.monthly) * 100}%"></i><em style="width:${(best.load / best.monthly) * 100}%"></em></div>`
+            : ''
+        }
+        <div class="bar" aria-hidden="true"><i style="width:${bar}%"></i></div>
+        <p class="delta">${delta}</p>
+        <p class="note">${best.note}</p>
+      </article>`;
+    }).join('');
+
+    optCount.textContent = `(${rows.length})`;
+    // Group by model (text before " · "), then platform — both get rowspan.
+    const modelOf = (r: (typeof rows)[0]) => {
+      const i = r.name.indexOf(' · ');
+      return i >= 0 ? r.name.slice(0, i) : r.name;
+    };
+    const deployOf = (r: (typeof rows)[0]) => {
+      const i = r.name.indexOf(' · ');
+      return i >= 0 ? r.name.slice(i + 3) : r.provider;
+    };
+    const platOf = (r: (typeof rows)[0]) => r.provider;
+    const minMonthly = (pred: (r: (typeof rows)[0]) => boolean) =>
+      Math.min(...rows.filter(pred).map((x) => x.monthly), Number.POSITIVE_INFINITY);
+
+    const sorted = [...rows].sort((a, b) => {
+      const ma = modelOf(a);
+      const mb = modelOf(b);
+      if (ma !== mb) {
+        const ca = minMonthly((x) => modelOf(x) === ma);
+        const cb = minMonthly((x) => modelOf(x) === mb);
+        if (ca !== cb) return ca - cb;
+        return ma.localeCompare(mb);
+      }
+      const pa = platOf(a);
+      const pb = platOf(b);
+      if (pa !== pb) {
+        const ca = minMonthly((x) => modelOf(x) === ma && platOf(x) === pa);
+        const cb = minMonthly((x) => modelOf(x) === mb && platOf(x) === pb);
+        if (ca !== cb) return ca - cb;
+        return pa.localeCompare(pb);
+      }
+      return a.monthly - b.monthly;
+    });
+
+    const modelSize = new Map<string, number>();
+    const platSize = new Map<string, number>(); // key = model\0platform
+    for (const r of sorted) {
+      const m = modelOf(r);
+      const k = `${m}\0${platOf(r)}`;
+      modelSize.set(m, (modelSize.get(m) ?? 0) + 1);
+      platSize.set(k, (platSize.get(k) ?? 0) + 1);
+    }
+    const seenModel = new Set<string>();
+    const seenPlat = new Set<string>();
+    tbody.innerHTML = sorted
+      .map((r) => {
+        const model = modelOf(r);
+        const deploy = deployOf(r);
+        const plat = platOf(r);
+        const platKey = `${model}\0${plat}`;
+        const firstModel = !seenModel.has(model);
+        const firstPlat = !seenPlat.has(platKey);
+        if (firstModel) seenModel.add(model);
+        if (firstPlat) seenPlat.add(platKey);
+        const mSpan = modelSize.get(model) ?? 1;
+        const pSpan = platSize.get(platKey) ?? 1;
+        const vs =
+          baseline && r.id !== baseline.id
+            ? r.monthly < baseline.monthly
+              ? `${(baseline.monthly / Math.max(r.monthly, 0.01)).toFixed(0)}× cheaper`
+              : `${(r.monthly / baseline.monthly).toFixed(1)}× baseline`
+            : '—';
+        const modelCell = firstModel
+          ? `<td class="model-cell" rowspan="${mSpan}"><span class="model-name">${model}</span></td>`
+          : '';
+        const platCell = firstPlat
+          ? `<td class="plat-cell" rowspan="${pSpan}"><span class="plat-name">${plat}</span></td>`
+          : '';
+        return `<tr class="${r.group}${r.id === winner.id ? ' best' : ''}${mSpan > 1 ? ' in-group' : ''}${firstModel ? ' group-start' : ''}${firstPlat && !firstModel ? ' plat-start' : ''}">
+          ${modelCell}
+          <td>
+            <a href="${r.pricingUrl}" target="_blank" rel="noopener noreferrer">${deploy} <span class="ext">↗</span></a>
+            <div class="sub">${r.note}${r.gpu ? ` · ${r.gpu}` : ''}</div>
+          </td>
+          ${platCell}
+          <td>${billingLabel(r.billing)}</td>
+          <td class="num">${fmtInr(r.perUnit)}</td>
+          <td class="num">${fmtInr(r.generating)}</td>
+          <td class="num extra-col">${
+            r.group === 'serverless'
+              ? loadOn.checked
+                ? `+${fmtInr(r.load)}`
+                : '<span class="dim">excluded</span>'
+              : r.group === 'pod'
+                ? '<span class="dim">loads once</span>'
+                : '<span class="dim">n/a</span>'
+          }</td>
+          <td class="num">${fmtInr(r.monthly)}</td>
+          <td>${vs}</td>
+        </tr>`;
+      })
+      .join('');
+  }
+
+  document.querySelectorAll('.mode-btn').forEach((btn) => {
+    btn.addEventListener('click', () => setMode((btn as HTMLElement).dataset.mode as Mode));
+  });
+  volumeEl.addEventListener('input', () => {
+    volumeNum.value = volumeEl.value;
+    render();
+  });
+  volumeNum.addEventListener('input', render);
+  secsEl.addEventListener('input', render);
+  fxEl.addEventListener('input', render);
+
+  tierSel.innerHTML = rates.coldStart.tiers
+    .map((t) => `<option value="${t.id}">${t.label}</option>`)
+    .join('');
+  tierSel.value = rates.coldStart.defaultTier;
+
+  presetBtns.innerHTML = rates.coldStart.presets
+    .map((p) => `<button type="button" class="preset-btn" data-preset="${p.id}">${p.label}</button>`)
+    .join('');
+  presetBtns.querySelectorAll('.preset-btn').forEach((b) => {
+    b.addEventListener('click', () => applyPreset((b as HTMLElement).dataset.preset!));
+  });
+
+  platFilter.innerHTML =
+    `<button type="button" class="preset-btn is-active" data-plat="all">All</button>` +
+    rates.platforms
+      .map((p) => `<button type="button" class="preset-btn" data-plat="${p.id}">${p.name}</button>`)
+      .join('');
+  platFilter.querySelectorAll('.preset-btn').forEach((b) => {
+    b.addEventListener('click', () => {
+      platformFilter = (b as HTMLElement).dataset.plat || 'all';
+      platFilter.querySelectorAll('.preset-btn').forEach((x) => {
+        x.classList.toggle('is-active', (x as HTMLElement).dataset.plat === platformFilter);
+      });
+      render();
+    });
+  });
+
+  tipsCount.textContent = `(${rates.coldStart.tips.length})`;
+  tipsList.innerHTML = rates.coldStart.tips
+    .map(
+      (t) =>
+        `<li><span class="tip-title">${t.title}</span><span class="tip-effect">${t.effect}</span><span class="tip-detail">${t.detail}</span></li>`,
+    )
+    .join('');
+  [loadOn, modelSel, tierSel, perWakeEl, idleSecEl].forEach((el) =>
+    el.addEventListener('input', render),
+  );
+
+  setMode('image');
+</script>
+
+<style>
+  .calc {
+    --c-bg: #fbfaf8;
+    --c-surface: #ffffff;
+    --c-ink: #1a1a19;
+    --c-muted: #6b6a66;
+    --c-line: #e5e2dc;
+    --c-accent: #0f5c4a;
+    --c-accent-soft: #e6f0ec;
+    --c-hosted: #0b5394;
+    --c-hosted-soft: #eaf2fb;
+    --c-serverless: #38761d;
+    --c-serverless-soft: #eefaee;
+    --c-pod: #8a5a13;
+    --c-pod-soft: #fdf3e6;
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-ui: ui-sans-serif, system-ui, sans-serif;
+    --font-num: 'IBM Plex Mono', ui-monospace, monospace;
+    --r: 10px;
+    font-family: var(--font-ui);
+    color: var(--c-ink);
+  }
+  @media (prefers-color-scheme: dark) {
+    .calc {
+      --c-bg: transparent;
+      --c-surface: #1c1e1b;
+      --c-ink: #eeece7;
+      --c-muted: #a8a69f;
+      --c-line: #2e302c;
+      --c-accent: #6fc2a6;
+      --c-accent-soft: #1a2e28;
+      --c-hosted-soft: #1a2836;
+      --c-serverless-soft: #1a2a1a;
+      --c-pod-soft: #2a2218;
+    }
+  }
+
+  .calc-head {
+    margin-bottom: 1.5rem;
+  }
+  .eyebrow {
+    margin: 0 0 0.35rem;
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--c-muted);
+  }
+  .calc h1 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: clamp(1.75rem, 3vw, 2.35rem);
+    margin: 0 0 0.5rem;
+    line-height: 1.15;
+  }
+  .lead {
+    margin: 0;
+    max-width: 38rem;
+    color: var(--c-muted);
+    font-size: 1rem;
+  }
+
+  .mode {
+    display: inline-flex;
+    padding: 4px;
+    gap: 4px;
+    border: 1px solid var(--c-line);
+    border-radius: 999px;
+    background: var(--c-surface);
+    margin-bottom: 0.75rem;
+  }
+  .sticky-controls {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    margin: 0 -0.35rem 1.25rem;
+    padding: 0.5rem 0.35rem 0.65rem;
+    background: color-mix(in srgb, var(--c-surface) 88%, var(--c-bg));
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--c-line);
+  }
+  .sticky-controls .volume-panel {
+    margin-bottom: 0;
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.08);
+  }
+  .mode-btn {
+    border: 0;
+    background: transparent;
+    color: var(--c-muted);
+    font: inherit;
+    font-weight: 600;
+    padding: 0.55rem 1.1rem;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .mode-btn.is-active {
+    background: var(--c-accent);
+    color: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    .mode-btn.is-active {
+      color: #102018;
+    }
+  }
+
+  .panel {
+    border: 1px solid var(--c-line);
+    border-radius: var(--r);
+    background: var(--c-surface);
+    padding: 1.1rem 1.2rem 1rem;
+    margin-bottom: 1.25rem;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+  }
+  .volume-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    font-size: 0.9rem;
+    color: var(--c-muted);
+    margin-bottom: 0.5rem;
+  }
+  .volume-display {
+    font-family: var(--font-num);
+    font-size: 1.35rem;
+    color: var(--c-ink);
+    font-weight: 500;
+  }
+  .volume-row {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+  }
+  .volume-row input[type='range'] {
+    flex: 1;
+    accent-color: var(--c-accent);
+  }
+  .volume-row input[type='number'],
+  .assumptions-grid input {
+    width: 7rem;
+    padding: 0.45rem 0.55rem;
+    border: 1px solid var(--c-line);
+    border-radius: 6px;
+    background: var(--c-bg);
+    color: var(--c-ink);
+    font-family: var(--font-num);
+    font-size: 0.95rem;
+  }
+  .hint,
+  .crossover,
+  .footnote {
+    margin: 0.55rem 0 0;
+    font-size: 0.88rem;
+    color: var(--c-muted);
+  }
+  .crossover {
+    color: var(--c-pod);
+    font-weight: 500;
+  }
+  .assumptions {
+    margin-top: 0.85rem;
+    border-top: 1px solid var(--c-line);
+    padding-top: 0.55rem;
+  }
+  .assumptions summary {
+    cursor: pointer;
+    color: var(--c-muted);
+    font-size: 0.88rem;
+    font-weight: 600;
+  }
+  .assumptions-grid {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: 1fr 1fr;
+    margin-top: 0.75rem;
+  }
+  .assumptions-grid label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-size: 0.8rem;
+    color: var(--c-muted);
+  }
+
+  .compare-panel {
+    margin-bottom: 1.25rem;
+    border-left: 3px solid var(--c-hosted);
+  }
+  .compare-panel h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 600;
+  }
+  .plat-filter {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid var(--c-line);
+    border-radius: 999px;
+    background: var(--c-bg);
+    flex-wrap: wrap;
+  }
+  .plat-filter .preset-btn.is-active {
+    background: var(--c-hosted);
+    color: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    .plat-filter .preset-btn.is-active {
+      color: #1c1e1b;
+    }
+  }
+  .mode-tag {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    margin-left: 0.25rem;
+  }
+  .mode-tag.serverless {
+    background: var(--c-serverless-soft);
+    color: var(--c-serverless);
+  }
+  .mode-tag.pod {
+    background: var(--c-pod-soft);
+    color: var(--c-pod);
+  }
+  .v-ok {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--c-serverless);
+    background: var(--c-serverless-soft);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    margin-right: 0.2rem;
+  }
+  .v-no {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #a33;
+    background: #fde8e8;
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    margin-right: 0.2rem;
+  }
+  .v-warn {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--c-pod);
+    background: var(--c-pod-soft);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+  }
+  .plat-row.is-filter {
+    outline: 2px solid var(--c-hosted);
+  }
+  .compare-table td .sub {
+    max-width: 28rem;
+  }
+
+  .load-panel {
+    border-left: 3px solid var(--c-pod);
+  }
+  .load-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .load-head h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 600;
+  }
+  .load-head .hint {
+    max-width: 46rem;
+  }
+  .tag {
+    font-family: var(--font-ui);
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: var(--c-pod-soft);
+    color: var(--c-pod);
+    padding: 0.2rem 0.45rem;
+    border-radius: 999px;
+    vertical-align: middle;
+    margin-left: 0.35rem;
+  }
+  .switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--c-muted);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .switch input {
+    accent-color: var(--c-accent);
+    width: 1rem;
+    height: 1rem;
+  }
+  .presets {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+    margin-top: 0.9rem;
+  }
+  .presets-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 700;
+    color: var(--c-muted);
+  }
+  .preset-btns {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid var(--c-line);
+    border-radius: 999px;
+    background: var(--c-bg);
+    flex-wrap: wrap;
+  }
+  .preset-btn {
+    border: 0;
+    background: transparent;
+    color: var(--c-muted);
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .preset-btn:hover {
+    color: var(--c-ink);
+  }
+  .preset-btn.is-active {
+    background: var(--c-pod);
+    color: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    .preset-btn.is-active {
+      color: #1c1e1b;
+    }
+  }
+  .preset-desc {
+    margin: 0.5rem 0 0;
+    font-size: 0.85rem;
+    color: var(--c-muted);
+  }
+
+  .tips {
+    margin-top: 0.9rem;
+    border-top: 1px solid var(--c-line);
+    padding-top: 0.6rem;
+  }
+  .tips summary {
+    cursor: pointer;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--c-ink);
+  }
+  .tips-count {
+    color: var(--c-muted);
+    font-weight: 400;
+  }
+  .tips-list {
+    list-style: none;
+    margin: 0.75rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 0.55rem;
+  }
+  .tips-list li {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.15rem 0.75rem;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid var(--c-line);
+    border-radius: 8px;
+    background: var(--c-bg);
+  }
+  .tip-title {
+    font-weight: 600;
+    font-size: 0.88rem;
+  }
+  .tip-effect {
+    font-family: var(--font-num);
+    font-size: 0.78rem;
+    color: var(--c-pod);
+    background: var(--c-pod-soft);
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    white-space: nowrap;
+    justify-self: end;
+  }
+  .tip-detail {
+    grid-column: 1 / -1;
+    font-size: 0.82rem;
+    color: var(--c-muted);
+  }
+
+  .load-grid {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: 1fr;
+    margin-top: 0.9rem;
+  }
+  @media (min-width: 720px) {
+    .load-grid {
+      grid-template-columns: 1.4fr 1.4fr 1fr 1fr;
+    }
+  }
+  .load-grid label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-size: 0.8rem;
+    color: var(--c-muted);
+  }
+  .load-grid select,
+  .load-grid input {
+    padding: 0.45rem 0.55rem;
+    border: 1px solid var(--c-line);
+    border-radius: 6px;
+    background: var(--c-bg);
+    color: var(--c-ink);
+    font-family: var(--font-num);
+    font-size: 0.9rem;
+    width: 100%;
+  }
+  .load-readout {
+    margin-top: 0.9rem;
+    border-top: 1px solid var(--c-line);
+    padding-top: 0.75rem;
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: center;
+  }
+  .chip {
+    font-family: var(--font-num);
+    font-size: 0.82rem;
+    border: 1px solid var(--c-line);
+    border-radius: 999px;
+    padding: 0.25rem 0.6rem;
+    color: var(--c-muted);
+  }
+  .chip b {
+    color: var(--c-ink);
+  }
+  .chip.is-out {
+    border-color: var(--c-pod);
+    background: var(--c-pod-soft);
+    color: var(--c-pod);
+  }
+  .chip.is-out b {
+    color: var(--c-pod);
+  }
+  .load-sum {
+    margin: 0.7rem 0 0;
+    font-size: 0.88rem;
+    line-height: 1.9;
+  }
+  .pill {
+    font-family: var(--font-num);
+    padding: 0.2rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+  }
+  .pill.base {
+    background: var(--c-serverless-soft);
+    color: var(--c-serverless);
+  }
+  .pill.extra {
+    background: var(--c-pod-soft);
+    color: var(--c-pod);
+  }
+  .pill.total {
+    background: var(--c-accent-soft);
+    color: var(--c-accent);
+    font-weight: 600;
+  }
+  .plus {
+    color: var(--c-muted);
+    margin: 0 0.15rem;
+  }
+  .load-off {
+    margin: 0;
+    font-size: 0.88rem;
+    color: var(--c-muted);
+  }
+
+  .cards {
+    display: grid;
+    gap: 0.85rem;
+    grid-template-columns: 1fr;
+    margin-bottom: 1.25rem;
+  }
+  @media (min-width: 860px) {
+    .cards {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+  .card {
+    border: 1px solid var(--c-line);
+    border-radius: var(--r);
+    background: var(--c-surface);
+    padding: 1rem 1.05rem 0.95rem;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+  }
+  .card.hosted {
+    border-top: 3px solid var(--c-hosted);
+  }
+  .card.serverless {
+    border-top: 3px solid var(--c-serverless);
+  }
+  .card.pod {
+    border-top: 3px solid var(--c-pod);
+  }
+  .card.is-best {
+    box-shadow: 0 0 0 2px var(--c-accent);
+  }
+  .card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .card h2 {
+    margin: 0;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--c-muted);
+    font-weight: 700;
+  }
+  .badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    background: var(--c-accent-soft);
+    color: var(--c-accent);
+    padding: 0.2rem 0.45rem;
+    border-radius: 999px;
+  }
+  .blurb {
+    margin: 0.35rem 0 0.75rem;
+    font-size: 0.8rem;
+    color: var(--c-muted);
+  }
+  .card-link {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    margin-bottom: 0.65rem;
+  }
+  .card-link:hover .card-name {
+    color: var(--c-accent);
+  }
+  .card-name {
+    display: block;
+    font-weight: 600;
+    font-size: 0.98rem;
+    line-height: 1.3;
+  }
+  .card-provider {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--c-muted);
+    margin-top: 0.15rem;
+  }
+  .ext {
+    font-size: 0.75em;
+    opacity: 0.7;
+  }
+  .card-mo {
+    margin: 0;
+    line-height: 1.1;
+  }
+  .card-mo .num {
+    font-family: var(--font-num);
+    font-size: 1.55rem;
+    font-weight: 500;
+  }
+  .card-mo .unit {
+    color: var(--c-muted);
+    margin-left: 0.2rem;
+    font-size: 0.9rem;
+  }
+  .card-unit {
+    margin: 0.25rem 0 0.65rem;
+    font-family: var(--font-num);
+    font-size: 0.85rem;
+    color: var(--c-muted);
+  }
+  .bar {
+    height: 6px;
+    background: var(--c-line);
+    border-radius: 99px;
+    overflow: hidden;
+  }
+  .bar i {
+    display: block;
+    height: 100%;
+    background: var(--c-accent);
+    border-radius: 99px;
+    transition: width 0.2s ease;
+  }
+  .card.hosted .bar i {
+    background: var(--c-hosted);
+  }
+  .card.serverless .bar i {
+    background: var(--c-serverless);
+  }
+  .card.pod .bar i {
+    background: var(--c-pod);
+  }
+  .split {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0 0 0.5rem;
+    font-family: var(--font-num);
+    font-size: 0.78rem;
+    color: var(--c-muted);
+  }
+  .sw {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    display: inline-block;
+  }
+  .sw.base {
+    background: var(--c-serverless);
+  }
+  .sw.extra {
+    background: var(--c-pod);
+    margin-left: 0.35rem;
+  }
+  .split-bar {
+    display: flex;
+  }
+  .split-bar i {
+    background: var(--c-serverless);
+    border-radius: 99px 0 0 99px;
+  }
+  .split-bar em {
+    display: block;
+    height: 100%;
+    background: var(--c-pod);
+    border-radius: 0 99px 99px 0;
+  }
+  .delta,
+  .note {
+    margin: 0.55rem 0 0;
+    font-size: 0.8rem;
+    color: var(--c-muted);
+  }
+  .delta {
+    font-weight: 600;
+    color: var(--c-ink);
+  }
+
+  .all-opts {
+    border: 1px solid var(--c-line);
+    border-radius: var(--r);
+    background: var(--c-surface);
+    padding: 0.75rem 1rem 1rem;
+    overflow: visible;
+  }
+  .all-opts summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--c-ink);
+  }
+  .table-wrap {
+    overflow: visible;
+    margin-top: 0.75rem;
+  }
+  .opt-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+  }
+  .opt-table th,
+  .opt-table td {
+    border-bottom: 1px solid var(--c-line);
+    padding: 0.65rem 0.5rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  .opt-table th {
+    color: var(--c-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+  }
+  .info-tip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    margin-left: 0.2rem;
+    padding: 0;
+    border: 1px solid var(--c-muted);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--c-muted);
+    font: inherit;
+    font-size: 0.65rem;
+    font-weight: 700;
+    font-style: italic;
+    font-family: Georgia, serif;
+    line-height: 1;
+    vertical-align: middle;
+    cursor: help;
+  }
+  .info-tip:hover,
+  .info-tip:focus-visible {
+    color: var(--c-ink);
+    border-color: var(--c-ink);
+    outline: none;
+  }
+  .info-tip::after {
+    content: attr(data-tip);
+    position: absolute;
+    z-index: 40;
+    left: 50%;
+    top: calc(100% + 8px);
+    bottom: auto;
+    transform: translateX(-50%);
+    width: min(18rem, 70vw);
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--c-line);
+    border-radius: 8px;
+    background: var(--c-surface);
+    color: var(--c-ink);
+    font-size: 0.75rem;
+    font-weight: 400;
+    font-style: normal;
+    font-family: var(--font-ui);
+    text-transform: none;
+    letter-spacing: 0;
+    line-height: 1.4;
+    white-space: normal;
+    text-align: left;
+    box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+  }
+  /* Last tip sits near the right edge — anchor to the right so it stays on-screen */
+  th:has(.info-tip):nth-child(7) .info-tip::after {
+    left: auto;
+    right: 0;
+    transform: none;
+  }
+  .info-tip:hover::after,
+  .info-tip:focus-visible::after {
+    opacity: 1;
+  }
+  .opt-table a {
+    color: var(--c-ink);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .opt-table a:hover {
+    color: var(--c-accent);
+  }
+  .opt-table .sub {
+    color: var(--c-muted);
+    font-size: 0.78rem;
+    font-weight: 400;
+    margin-top: 0.15rem;
+  }
+  .opt-table .num {
+    font-family: var(--font-num);
+    white-space: nowrap;
+  }
+  .opt-table tr.best td:nth-child(8),
+  .opt-table tr.best td:nth-child(9) {
+    color: var(--c-accent);
+    font-weight: 600;
+  }
+  .opt-table .model-cell,
+  .opt-table .plat-cell {
+    vertical-align: middle;
+    border-right: 1px solid var(--c-line);
+    background: color-mix(in srgb, var(--c-surface) 92%, var(--c-ink) 8%);
+    min-width: 6.5rem;
+    max-width: 11rem;
+  }
+  .opt-table .plat-cell {
+    min-width: 5.5rem;
+    max-width: 8rem;
+    background: color-mix(in srgb, var(--c-surface) 96%, var(--c-ink) 4%);
+  }
+  .opt-table .model-name,
+  .opt-table .plat-name {
+    font-weight: 700;
+    font-size: 0.9rem;
+    line-height: 1.25;
+  }
+  .opt-table .plat-name {
+    font-size: 0.85rem;
+  }
+  .opt-table tr.group-start td {
+    border-top: 2px solid var(--c-line);
+  }
+  .opt-table tr.plat-start td:not(.model-cell) {
+    border-top: 1px dashed var(--c-line);
+  }
+  .opt-table .extra-col {
+    color: var(--c-pod);
+    font-weight: 600;
+  }
+  .opt-table .dim {
+    color: var(--c-muted);
+    font-weight: 400;
+    font-family: var(--font-ui);
+    font-size: 0.8rem;
+  }
+  .opt-table tr.hosted {
+    background: color-mix(in srgb, var(--c-hosted-soft) 70%, transparent);
+  }
+  .opt-table tr.serverless {
+    background: color-mix(in srgb, var(--c-serverless-soft) 70%, transparent);
+  }
+  .opt-table tr.pod {
+    background: color-mix(in srgb, var(--c-pod-soft) 70%, transparent);
+  }
+</style>

@@ -1,0 +1,461 @@
+{
+  "verified": "2026-09-03",
+  "usdToInr": 95,
+  "hoursPerMonth": 730,
+  "platforms": [
+    {
+      "id": "runpod",
+      "name": "RunPod",
+      "billingShape": "serverless + pods",
+      "scaleToZero": true,
+      "bestFor": "Cheapest true serverless at our volume",
+      "pricingUrl": "https://www.runpod.io/pricing",
+      "docsUrl": "https://docs.runpod.io/serverless/pricing",
+      "httpStatus": 200,
+      "browserValidated": true,
+      "ratesValidated": true,
+      "compare": [
+        { "gpu": "L4 24GB", "mode": "serverless", "usdPerHour": 0.69, "note": "Flex workers" },
+        { "gpu": "L40S 48GB", "mode": "serverless", "usdPerHour": 1.75, "note": "Flex workers" },
+        { "gpu": "L4 24GB", "mode": "pod", "usdPerHour": 0.49, "note": "Secure Cloud" },
+        { "gpu": "L40S 48GB", "mode": "pod", "usdPerHour": 0.79, "note": "Community Cloud" }
+      ]
+    },
+    {
+      "id": "modal",
+      "name": "Modal",
+      "billingShape": "serverless only",
+      "scaleToZero": true,
+      "bestFor": "Best DX + GPU memory snapshots",
+      "pricingUrl": "https://modal.com/pricing",
+      "httpStatus": 200,
+      "browserValidated": true,
+      "ratesValidated": true,
+      "compare": [
+        { "gpu": "L4 24GB", "mode": "serverless", "usdPerHour": 0.7992, "note": "$0.000222/sec × 3600" },
+        { "gpu": "L40S 48GB", "mode": "serverless", "usdPerHour": 1.9512, "note": "$0.000542/sec × 3600" }
+      ]
+    },
+    {
+      "id": "huggingface",
+      "name": "Hugging Face",
+      "billingShape": "dedicated endpoints (pod-like)",
+      "scaleToZero": true,
+      "bestFor": "One-click Hub deploy; NOT cheap at low volume",
+      "pricingUrl": "https://huggingface.co/docs/inference-endpoints/en/pricing",
+      "httpStatus": 200,
+      "browserValidated": true,
+      "ratesValidated": true,
+      "caveat": "Billed by the minute while the replica is initializing or running. With min replicas = 1 this is a fixed monthly rent — same class as a Pod, not RunPod Serverless. Scale-to-zero is available but every wake pays a cold start.",
+      "compare": [
+        { "gpu": "L4 24GB", "mode": "pod", "usdPerHour": 0.7, "note": "GCP nvidia-l4 x1" },
+        { "gpu": "L4 24GB", "mode": "pod", "usdPerHour": 0.8, "note": "AWS nvidia-l4 x1" },
+        { "gpu": "L40S 48GB", "mode": "pod", "usdPerHour": 1.8, "note": "AWS nvidia-l40s x1" }
+      ]
+    },
+    {
+      "id": "alibaba",
+      "name": "Alibaba Cloud PAI-EAS",
+      "billingShape": "always-on pay-as-you-go (pod)",
+      "scaleToZero": false,
+      "bestFor": "China / APAC residency — only if console rate is checked",
+      "pricingUrl": "https://help.aliyun.com/en/pai/product-overview/billing-of-eas",
+      "httpStatus": 200,
+      "browserValidated": false,
+      "ratesValidated": false,
+      "caveat": "Official docs confirm: public/dedicated GPU resources bill for the whole time the instance is Running — even with zero requests. True serverless exists only for SDWebUI, not custom FLUX. Exact GPU $/hr is region-specific and shown only in the PAI console / purchase page — we do not invent a rate for the calculator.",
+      "compare": [
+        { "gpu": "GU30 / A10 24GB", "mode": "pod", "usdPerHour": null, "note": "Console / purchase page only" }
+      ]
+    },
+    {
+      "id": "aws",
+      "name": "AWS EC2",
+      "billingShape": "always-on VM (pod)",
+      "scaleToZero": false,
+      "bestFor": "Mumbai region / existing AWS account",
+      "pricingUrl": "https://aws.amazon.com/ec2/pricing/on-demand/",
+      "httpStatus": 200,
+      "browserValidated": false,
+      "ratesValidated": true,
+      "compare": [
+        { "gpu": "L4 24GB", "mode": "pod", "usdPerHour": 0.8048, "note": "g6.xlarge on-demand" }
+      ]
+    }
+  ],
+  "coldStart": {
+    "idleTimeoutSeconds": 5,
+    "defaultPerWake": 1,
+    "defaultTier": "cached",
+    "docsUrl": "https://docs.runpod.io/serverless/pricing",
+    "presets": [
+      {
+        "id": "naive",
+        "label": "Naive setup",
+        "desc": "Platform defaults. Weights pulled over the network on every boot, one request at a time, 5 s idle timeout.",
+        "tier": "cold",
+        "perWake": 1,
+        "idleSec": 5
+      },
+      {
+        "id": "tuned",
+        "label": "Well-tuned",
+        "desc": "Weights baked into the image, requests batched in 50s, worker kept awake 60 s between bursts.",
+        "tier": "cached",
+        "perWake": 50,
+        "idleSec": 60
+      },
+      {
+        "id": "best",
+        "label": "Best case",
+        "desc": "Snapshot restore (Modal GPU snapshot / RunPod FlashBoot) plus batches of 100 and a 60 s warm window.",
+        "tier": "snapshot",
+        "perWake": 100,
+        "idleSec": 60
+      }
+    ],
+    "tips": [
+      {
+        "title": "Bake weights into the image or a fast volume",
+        "effect": "~70 s → ~20 s",
+        "detail": "Never download the model at boot. Costs a little storage (~$0.07–0.10/GB/month)."
+      },
+      {
+        "title": "Snapshot restore — Modal GPU memory snapshots, RunPod FlashBoot",
+        "effect": "~20 s → ~3 s",
+        "detail": "Restores an already-loaded, already-compiled model. Free on both platforms."
+      },
+      {
+        "title": "Batch requests per wake-up",
+        "effect": "divides load cost by batch size",
+        "detail": "Group work instead of sending one image at a time. The single biggest lever we control in our own code."
+      },
+      {
+        "title": "Raise the idle timeout (5 s → 60–300 s)",
+        "effect": "removes repeat loads inside a burst",
+        "detail": "Worker stays awake so nearby requests reuse it. We pay for the extra awake seconds."
+      },
+      {
+        "title": "Quantise the weights (FP8 / INT8)",
+        "effect": "roughly halves load time",
+        "detail": "12 GB → 6 GB means half as much to copy. Switch the model dropdown above to see it. Small quality risk."
+      },
+      {
+        "title": "Cache torch.compile artifacts to a volume",
+        "effect": "avoids re-compiling",
+        "detail": "Set TORCHINDUCTOR_CACHE_DIR and TRITON_CACHE_DIR. Compilation can otherwise take minutes on every boot."
+      },
+      {
+        "title": "Keep one worker always warm",
+        "effect": "eliminates cold starts entirely",
+        "detail": "keep_warm=1 or min workers > 0. Only real-money option here — that worker bills like a pod."
+      }
+    ],
+    "tiers": [
+      {
+        "id": "cold",
+        "label": "Downloaded on every boot",
+        "overheadSec": 10,
+        "gbPerSec": 0.2,
+        "note": "No cache — weights pulled over the network each time a worker starts."
+      },
+      {
+        "id": "cached",
+        "label": "Cached on volume / baked into image",
+        "overheadSec": 8,
+        "gbPerSec": 1,
+        "note": "Weights already on fast local disk; still copied into GPU memory."
+      },
+      {
+        "id": "snapshot",
+        "label": "Memory snapshot (Modal GPU snapshot / RunPod FlashBoot)",
+        "overheadSec": 2,
+        "gbPerSec": 8,
+        "note": "Already-loaded GPU state restored from a checkpoint. Modal reports up to 10x faster starts."
+      }
+    ]
+  },
+  "image": {
+    "unitLabel": "image",
+    "unitLabelPlural": "images",
+    "defaultVolume": 10000,
+    "defaultSeconds": 2,
+    "volumeMax": 200000,
+    "volumeStep": 100,
+    "baselineId": "gemini-3-pro-batch",
+    "assumptionsHint": "Seconds/image only affects self-hosted options.",
+    "defaultModelId": "klein-4b",
+    "models": [
+      { "id": "klein-4b-fp8", "name": "FLUX.2 klein 4B (FP8 quantised)", "sizeGb": 6 },
+      { "id": "klein-4b", "name": "FLUX.2 klein 4B (bf16)", "sizeGb": 12 },
+      { "id": "sd35-large", "name": "Stable Diffusion 3.5 Large 8B", "sizeGb": 16 },
+      { "id": "klein-9b", "name": "FLUX.2 klein 9B (bf16)", "sizeGb": 22 },
+      { "id": "flux2-dev", "name": "FLUX.2 [dev] 32B (bf16)", "sizeGb": 64 }
+    ],
+    "options": [
+      {
+        "id": "gemini-3-pro-batch",
+        "name": "Gemini 3 Pro Image 2K",
+        "provider": "Google",
+        "group": "hosted",
+        "billing": "per_unit",
+        "usdPerUnit": 0.067,
+        "note": "Best prompt adherence",
+        "pricingUrl": "https://ai.google.dev/gemini-api/docs/pricing"
+      },
+      {
+        "id": "gpt-image-2-high",
+        "name": "GPT Image 2 High",
+        "provider": "OpenAI",
+        "group": "hosted",
+        "billing": "per_unit",
+        "usdPerUnit": 0.106,
+        "note": "Text-in-image / hard prompts",
+        "pricingUrl": "https://platform.openai.com/docs/pricing"
+      },
+      {
+        "id": "flux2-pro-api",
+        "name": "FLUX.2 [pro]",
+        "provider": "Black Forest Labs",
+        "group": "hosted",
+        "billing": "per_unit",
+        "usdPerUnit": 0.03,
+        "note": "Cheapest hosted API",
+        "pricingUrl": "https://bfl.ai/pricing"
+      },
+      {
+        "id": "flux-klein-runpod-l4",
+        "name": "FLUX.2 klein 4B · RunPod L4",
+        "provider": "RunPod",
+        "platformId": "runpod",
+        "group": "serverless",
+        "billing": "per_gpu_second",
+        "usdPerHour": 0.69,
+        "gpu": "L4 24GB",
+        "note": "Cheapest true serverless",
+        "pricingUrl": "https://www.runpod.io/pricing"
+      },
+      {
+        "id": "flux-klein-modal-l4",
+        "name": "FLUX.2 klein 4B · Modal L4",
+        "provider": "Modal",
+        "platformId": "modal",
+        "group": "serverless",
+        "billing": "per_gpu_second",
+        "usdPerHour": 0.7992,
+        "gpu": "L4 24GB",
+        "note": "$0.000222/sec · best DX",
+        "pricingUrl": "https://modal.com/pricing"
+      },
+      {
+        "id": "flux-klein-runpod-l40s",
+        "name": "FLUX.2 klein 4B · RunPod L40S",
+        "provider": "RunPod",
+        "platformId": "runpod",
+        "group": "serverless",
+        "billing": "per_gpu_second",
+        "usdPerHour": 1.75,
+        "gpu": "L40S 48GB",
+        "note": "Faster / headroom",
+        "pricingUrl": "https://www.runpod.io/pricing"
+      },
+      {
+        "id": "flux-klein-modal-l40s",
+        "name": "FLUX.2 klein 4B · Modal L40S",
+        "provider": "Modal",
+        "platformId": "modal",
+        "group": "serverless",
+        "billing": "per_gpu_second",
+        "usdPerHour": 1.9512,
+        "gpu": "L40S 48GB",
+        "note": "$0.000542/sec",
+        "pricingUrl": "https://modal.com/pricing"
+      },
+      {
+        "id": "flux-klein-runpod-pod-l40s",
+        "name": "FLUX.2 klein 4B · RunPod Pod L40S",
+        "provider": "RunPod",
+        "platformId": "runpod",
+        "group": "pod",
+        "billing": "fixed_month",
+        "usdPerHour": 0.79,
+        "gpu": "L40S 48GB",
+        "note": "Community Cloud · 24×7",
+        "pricingUrl": "https://www.runpod.io/pricing"
+      },
+      {
+        "id": "flux-klein-runpod-pod-l4",
+        "name": "FLUX.2 klein 4B · RunPod Pod L4",
+        "provider": "RunPod",
+        "platformId": "runpod",
+        "group": "pod",
+        "billing": "fixed_month",
+        "usdPerHour": 0.49,
+        "gpu": "L4 24GB",
+        "note": "Secure Cloud · 24×7",
+        "pricingUrl": "https://www.runpod.io/pricing"
+      },
+      {
+        "id": "flux-klein-hf-l4-gcp",
+        "name": "FLUX.2 klein 4B · HF Endpoints L4",
+        "provider": "Hugging Face",
+        "platformId": "huggingface",
+        "group": "pod",
+        "billing": "fixed_month",
+        "usdPerHour": 0.7,
+        "gpu": "L4 24GB",
+        "note": "GCP · min 1 replica = Pod bill",
+        "pricingUrl": "https://huggingface.co/docs/inference-endpoints/en/pricing"
+      },
+      {
+        "id": "flux-klein-hf-l4-aws",
+        "name": "FLUX.2 klein 4B · HF Endpoints L4",
+        "provider": "Hugging Face",
+        "platformId": "huggingface",
+        "group": "pod",
+        "billing": "fixed_month",
+        "usdPerHour": 0.8,
+        "gpu": "L4 24GB",
+        "note": "AWS · min 1 replica = Pod bill",
+        "pricingUrl": "https://huggingface.co/docs/inference-endpoints/en/pricing"
+      },
+      {
+        "id": "flux-klein-hf-l40s",
+        "name": "FLUX.2 klein 4B · HF Endpoints L40S",
+        "provider": "Hugging Face",
+        "platformId": "huggingface",
+        "group": "pod",
+        "billing": "fixed_month",
+        "usdPerHour": 1.8,
+        "gpu": "L40S 48GB",
+        "note": "AWS · Hub deploy convenience",
+        "pricingUrl": "https://huggingface.co/docs/inference-endpoints/en/pricing"
+      },
+      {
+        "id": "flux-klein-aws-g6",
+        "name": "FLUX.2 klein 4B · AWS g6.xlarge",
+        "provider": "AWS",
+        "platformId": "aws",
+        "group": "pod",
+        "billing": "fixed_month",
+        "usdPerHour": 0.8048,
+        "gpu": "L4 24GB",
+        "note": "Mumbai region available",
+        "pricingUrl": "https://aws.amazon.com/ec2/pricing/on-demand/"
+      }
+    ]
+  },
+  "video": {
+    "unitLabel": "5 s clip",
+    "unitLabelPlural": "5 s clips",
+    "defaultVolume": 1000,
+    "defaultSeconds": 540,
+    "volumeMax": 50000,
+    "volumeStep": 50,
+    "baselineId": "veo-31-fast",
+    "assumptionsHint": "Generation seconds = GPU work per 5 s clip (not clip length). Only affects self-host.",
+    "clipSeconds": 5,
+    "defaultModelId": "wan22-ti2v-5b",
+    "models": [
+      { "id": "ltx-video-2b", "name": "LTX-Video 2B", "sizeGb": 4 },
+      { "id": "wan22-ti2v-5b", "name": "Wan 2.2 TI2V-5B (bf16)", "sizeGb": 11 },
+      { "id": "hunyuan-13b", "name": "HunyuanVideo 13B", "sizeGb": 26 },
+      { "id": "wan22-a14b", "name": "Wan 2.2 T2V-A14B (bf16)", "sizeGb": 28 }
+    ],
+    "options": [
+      {
+        "id": "veo-31-fast",
+        "name": "Veo 3.1 Fast",
+        "provider": "Google / fal",
+        "group": "hosted",
+        "billing": "per_video_second",
+        "usdPerVideoSecond": 0.15,
+        "note": "1080p + audio · PRIMARY",
+        "pricingUrl": "https://fal.ai/models/fal-ai/veo3.1/fast"
+      },
+      {
+        "id": "kling-30-pro",
+        "name": "Kling 3.0 Pro",
+        "provider": "Kuaishou / fal",
+        "group": "hosted",
+        "billing": "per_video_second",
+        "usdPerVideoSecond": 0.168,
+        "note": "Longer clips, strong motion",
+        "pricingUrl": "https://fal.ai/models/fal-ai/kling-video/v3/pro/image-to-video"
+      },
+      {
+        "id": "veo-31-standard",
+        "name": "Veo 3.1 Standard",
+        "provider": "Google / fal",
+        "group": "hosted",
+        "billing": "per_video_second",
+        "usdPerVideoSecond": 0.4,
+        "note": "Hero / final assets",
+        "pricingUrl": "https://fal.ai/models/fal-ai/veo3.1"
+      },
+      {
+        "id": "wan22-runpod-300",
+        "name": "Wan 2.2 TI2V-5B · RunPod L40S",
+        "provider": "RunPod",
+        "platformId": "runpod",
+        "group": "serverless",
+        "billing": "per_gpu_second",
+        "usdPerHour": 1.75,
+        "gpu": "L40S 48GB",
+        "secondsOverride": 300,
+        "note": "Optimistic ~5 min gen · no audio",
+        "pricingUrl": "https://www.runpod.io/pricing"
+      },
+      {
+        "id": "wan22-runpod-540",
+        "name": "Wan 2.2 TI2V-5B · RunPod L40S",
+        "provider": "RunPod",
+        "platformId": "runpod",
+        "group": "serverless",
+        "billing": "per_gpu_second",
+        "usdPerHour": 1.75,
+        "gpu": "L40S 48GB",
+        "secondsOverride": 540,
+        "note": "Conservative ~9 min gen · no audio",
+        "pricingUrl": "https://www.runpod.io/pricing"
+      },
+      {
+        "id": "wan22-modal-540",
+        "name": "Wan 2.2 TI2V-5B · Modal L40S",
+        "provider": "Modal",
+        "platformId": "modal",
+        "group": "serverless",
+        "billing": "per_gpu_second",
+        "usdPerHour": 1.9512,
+        "gpu": "L40S 48GB",
+        "secondsOverride": 540,
+        "note": "Conservative · no audio",
+        "pricingUrl": "https://modal.com/pricing"
+      },
+      {
+        "id": "wan22-hf-l40s",
+        "name": "Wan 2.2 TI2V-5B · HF Endpoints L40S",
+        "provider": "Hugging Face",
+        "platformId": "huggingface",
+        "group": "pod",
+        "billing": "fixed_month",
+        "usdPerHour": 1.8,
+        "gpu": "L40S 48GB",
+        "note": "AWS · min 1 replica = Pod bill",
+        "pricingUrl": "https://huggingface.co/docs/inference-endpoints/en/pricing"
+      },
+      {
+        "id": "wan22-runpod-pod",
+        "name": "Wan 2.2 TI2V-5B · RunPod Pod L40S",
+        "provider": "RunPod",
+        "platformId": "runpod",
+        "group": "pod",
+        "billing": "fixed_month",
+        "usdPerHour": 0.79,
+        "gpu": "L40S 48GB",
+        "note": "Near Veo cost, worse quality",
+        "pricingUrl": "https://www.runpod.io/pricing"
+      }
+    ]
+  }
+}

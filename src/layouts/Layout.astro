@@ -1,0 +1,160 @@
+---
+interface Props {
+  title?: string;
+  frontmatter?: { title?: string };
+}
+
+const { title, frontmatter } = Astro.props;
+const pageTitle = title ?? frontmatter?.title ?? 'Image Gen R&D';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <style is:global>
+      :root {
+        color-scheme: light dark;
+        --bg: #f7f5f0;
+        --fg: #1a1a1a;
+        --muted: #5c5c5c;
+        --link: #0b57d0;
+        --border: #d9d4c8;
+        --code-bg: #ebe6dc;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #121212;
+          --fg: #ececec;
+          --muted: #a0a0a0;
+          --link: #8ab4f8;
+          --border: #333;
+          --code-bg: #1e1e1e;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+        background: var(--bg);
+        color: var(--fg);
+        line-height: 1.6;
+      }
+      .wrap {
+        max-width: 72rem;
+        margin: 0 auto;
+        padding: 1.5rem 1.25rem 4rem;
+      }
+      nav {
+        margin-bottom: 2rem;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 0.9rem;
+      }
+      nav a {
+        color: var(--muted);
+        text-decoration: none;
+      }
+      nav a:hover {
+        color: var(--link);
+      }
+      article :is(h1, h2, h3) {
+        line-height: 1.25;
+        margin-top: 1.75em;
+      }
+      article h1 {
+        margin-top: 0;
+        font-size: 1.85rem;
+      }
+      article a {
+        color: var(--link);
+      }
+      article :is(code, pre) {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.88em;
+      }
+      article code {
+        background: var(--code-bg);
+        padding: 0.1em 0.35em;
+        border-radius: 3px;
+      }
+      article pre {
+        background: var(--code-bg);
+        padding: 1rem;
+        overflow-x: auto;
+        border-radius: 6px;
+      }
+      article pre code {
+        background: none;
+        padding: 0;
+      }
+      article table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+        display: block;
+        overflow-x: auto;
+      }
+      article th,
+      article td {
+        border: 1px solid var(--border);
+        padding: 0.45rem 0.6rem;
+        text-align: left;
+        vertical-align: top;
+      }
+      article th {
+        background: var(--code-bg);
+      }
+      /* MD tables use light row fills; force dark text so dark mode stays readable */
+      article table tbody tr[style] td {
+        color: #1a1a1a;
+      }
+      article hr {
+        border: none;
+        border-top: 1px solid var(--border);
+        margin: 2rem 0;
+      }
+      article blockquote {
+        margin: 1rem 0;
+        padding-left: 1rem;
+        border-left: 3px solid var(--border);
+        color: var(--muted);
+      }
+      ul.docs {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+      }
+      ul.docs li {
+        border-bottom: 1px solid var(--border);
+      }
+      ul.docs a {
+        display: block;
+        padding: 0.85rem 0;
+        color: var(--fg);
+        text-decoration: none;
+      }
+      ul.docs a:hover {
+        color: var(--link);
+      }
+      ul.docs span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.85rem;
+        margin-top: 0.2rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav><a href="/">← Image Gen R&D</a></nav>
+      <article>
+        <slot />
+      </article>
+    </div>
+  </body>
+</html>
